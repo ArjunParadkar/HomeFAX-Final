@@ -33,6 +33,7 @@ except ImportError:  # running as a plain HTTP worker on a pod
 
 import blob
 import colmap_runner as colmap
+import genrecon_runner
 import geometry
 import mesh as meshlib
 
@@ -169,22 +170,44 @@ def run_pipeline(job_input: dict, on_progress: ProgressFn = _noop_progress) -> d
                 ),
             }
 
-        on_progress("dense", f"{stats.images_registered} views registered")
-        fused = colmap.dense(workdir, log)
+        used_genrecon = False
+        if genrecon_runner.available():
+            # GenRecon is the main HomeFAX model: generative reconstruction
+            # conditioned on the COLMAP poses we just solved. The classical
+            # dense pipeline below stays as the automatic fallback.
+            try:
+                on_progress("dense", "GenRecon generative reconstruction")
+                gen_glb = genrecon_runner.reconstruct(workdir, log)
+                on_progress("measure", "measuring generated mesh")
+                measurements, completeness, gen_tris = meshlib.measure_generated_glb(gen_glb)
+                used_genrecon = True
+            except genrecon_runner.GenReconError as gerr:
+                log.append(f"GenRecon failed, falling back to dense stereo: {gerr}")
 
-        on_progress("mesh", "poisson surface")
-        poisson = colmap.poisson_mesh(fused, log)
+        if not used_genrecon:
+            on_progress("dense", f"{stats.images_registered} views registered")
+            fused = colmap.dense(workdir, log)
 
-        on_progress("measure", "planes and spacing")
-        measurements, rotation, translation = geometry.measure(str(fused))
-        prepared, completeness = meshlib.prepare(
-            poisson, rotation, translation, measurements.metres_per_unit
-        )
+            on_progress("mesh", "poisson surface")
+            poisson = colmap.poisson_mesh(fused, log)
+
+            on_progress("measure", "planes and spacing")
+            measurements, rotation, translation = geometry.measure(str(fused))
+            prepared, completeness = meshlib.prepare(
+                poisson, rotation, translation, measurements.metres_per_unit
+            )
 
         on_progress("pack", "compressing model")
-        glb_path = meshlib.export_glb(prepared, workdir / "scene.glb")
-        glb_path = meshlib.compress(glb_path)
-        glb_bytes = glb_path.read_bytes()
+        if used_genrecon:
+            # Ships byte-for-byte: the baked UV textures do not survive a
+            # re-export, and Draco would strip them too.
+            glb_bytes = gen_glb.read_bytes()
+            triangle_count = gen_tris
+        else:
+            glb_path = meshlib.export_glb(prepared, workdir / "scene.glb")
+            glb_path = meshlib.compress(glb_path)
+            glb_bytes = glb_path.read_bytes()
+            triangle_count = int(len(prepared.triangles))
 
         stamp = int(time.time())
         glb_url = blob.upload(
@@ -203,7 +226,7 @@ def run_pipeline(job_input: dict, on_progress: ProgressFn = _noop_progress) -> d
                     "framesSubmitted": submitted,
                     "reprojectionErrorPx": round(stats.mean_reprojection_error, 3),
                     "pointCount": measurements.point_count,
-                    "triangleCount": int(len(prepared.triangles)),
+                    "triangleCount": triangle_count,
                     "meshCompleteness": completeness,
                     "sharpness": sharpness,
                     "metresPerUnit": round(measurements.metres_per_unit, 6),

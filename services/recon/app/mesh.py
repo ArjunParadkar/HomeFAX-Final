@@ -110,3 +110,47 @@ def compress(glb: Path) -> Path:
     if compressed.exists() and compressed.stat().st_size > 0:
         return compressed
     return glb
+
+
+def measure_generated_glb(glb_path: Path):
+    """Measure a GenRecon GLB without touching its contents.
+
+    The generated model carries baked UV textures (chunked_to_glb runs xatlas
+    and a 4096px bake) and is already decimated, so it ships to the viewer
+    byte-for-byte as produced — any round-trip through open3d would strip the
+    textures. Measurement runs on a surface-sampled copy instead, through the
+    same plane/scale/spacing code as the classical path, so the numbers on a
+    record mean the same thing regardless of which reconstruction made it.
+
+    Returns (measurements, completeness, triangle_count).
+    """
+    import tempfile
+
+    import trimesh as _tm
+
+    import geometry as _geometry
+
+    loaded = _tm.load(str(glb_path), force="mesh")
+    if loaded.faces is None or len(loaded.faces) == 0:
+        raise ValueError("The generated GLB contains no triangles.")
+
+    points, _ = _tm.sample.sample_surface(loaded, 500_000)
+    with tempfile.NamedTemporaryFile(suffix=".ply", delete=False) as fh:
+        tmp_ply = fh.name
+    _tm.PointCloud(points).export(tmp_ply)
+    try:
+        measurements, _rotation, _translation = _geometry.measure(tmp_ply)
+    finally:
+        Path(tmp_ply).unlink(missing_ok=True)
+
+    edges = np.sort(
+        np.vstack([loaded.faces[:, [0, 1]], loaded.faces[:, [1, 2]], loaded.faces[:, [2, 0]]]),
+        axis=1,
+    )
+    _, counts = np.unique(edges, axis=0, return_counts=True)
+    completeness = round(
+        max(0.0, 1.0 - float(np.count_nonzero(counts == 1)) / len(counts)), 4
+    )
+
+    measurements.point_count = len(points)
+    return measurements, completeness, int(len(loaded.faces))

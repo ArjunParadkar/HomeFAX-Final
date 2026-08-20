@@ -226,8 +226,11 @@ def _health() -> dict:
         queued = sum(1 for j in _jobs.values() if j["state"] == "IN_QUEUE")
         running = sum(1 for j in _jobs.values() if j["state"] == "IN_PROGRESS")
 
+    import genrecon_runner
+
     return {
         "ok": True,
+        "genrecon": genrecon_runner.available(),
         "colmap": shutil.which("colmap") is not None,
         "gltfTransform": shutil.which("gltf-transform") is not None,
         "gpu": gpu,
