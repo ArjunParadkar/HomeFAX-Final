@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HomeFAX — contractor edition
 
-## Getting Started
+A permanent record of how a house was actually built. The contractor films each
+stage on a phone; the app returns a measured 3D model, a graded inspection, and
+a parts list that shows its work.
 
-First, run the development server:
+## The pipeline
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+phone: film stage → score frames for sharpness → upload the best 60
+  ↓
+RunPod GPU: COLMAP SfM → dense stereo → Poisson mesh → measure → Draco GLB
+  ↓
+app: geometry-based grading  +  vision review (Claude)  →  stage grade
+                                                        →  parts takeoff
+  ↓
+record: 11 stages, each graded, one cumulative parts list
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The video never leaves the phone. Frame selection happens on-device, so a
+two-minute 4K walk uploads as ~4 MB of chosen keyframes instead of 300 MB of
+footage.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Grading
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Four dimensions, weighted per stage (`src/lib/stages.ts`):
 
-## Learn More
+| Dimension | Source | Reproducible? |
+|---|---|---|
+| Capture | registration rate, sharpness, mesh completeness | yes |
+| Geometry | plumb, level, flatness, stud spacing, solve error | yes |
+| Workmanship | vision review against the stage checklist | no |
+| Compliance | vision review against the stage checklist | no |
 
-To learn more about Next.js, take a look at the following resources:
+When no Anthropic key is present, the two judged dimensions are dropped and the
+remaining weights renormalised — the report says so rather than scoring an
+un-assessed dimension as perfect.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Parts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Every line carries its derivation and one of three bases:
 
-## Deploy on Vercel
+- **measured** — computed from the model's own geometry
+- **detected** — counted in the frames by the vision review
+- **derived** — implied by a measured quantity under a stated rule
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Across stages, a later measured count supersedes an earlier estimate rather than
+double-ordering material that was simply visible twice.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Running locally
+
+```bash
+npm install
+npm run dev
+```
+
+With nothing configured, the app runs end to end against a local JSON store and
+a simulated reconstruction — clearly labelled as simulated everywhere it shows.
+
+## Environment
+
+| Variable | Effect when absent |
+|---|---|
+| `ACCESS_KEYS` | No one can sign in. Format: `secret:Label,secret2:Label2` |
+| `DATABASE_URL` | Falls back to a JSON file under `.data/` |
+| `BLOB_READ_WRITE_TOKEN` | Frames stay on the device; runs are simulated |
+| `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID` | Reconstruction is simulated |
+| `ANTHROPIC_API_KEY` | Workmanship and compliance are not graded |
+
+## Layout
+
+```
+src/lib/stages.ts    the 11 stages, their checklists, capture guidance, weights
+src/lib/quality.ts   the rubric — what each dimension measures and what it costs
+src/lib/parts.ts     catalogue and quantity takeoff
+src/lib/frames.ts    on-device frame selection
+src/lib/recon.ts     RunPod client, plus the simulation fallback
+src/lib/vision.ts    the vision review
+services/recon/      the GPU worker
+```

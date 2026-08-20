@@ -1,69 +1,72 @@
-import Image from "next/image";
+import { redirect } from "next/navigation";
+import KeyGate from "@/components/KeyGate";
+import { authConfigured, currentKey } from "@/lib/auth";
 
-export default function Home() {
+const STEPS = [
+  {
+    n: "01",
+    title: "Film the stage",
+    body: "One slow lap of each room on your phone. The frames are picked and thinned before anything uploads.",
+  },
+  {
+    n: "02",
+    title: "Get a measured model",
+    body: "Photogrammetry on a GPU turns the walk into a dimensioned 3D model — plumb, level, and spacing all measured off it.",
+  },
+  {
+    n: "03",
+    title: "Grade and take off",
+    body: "Every stage gets an inspection grade with the receipts, and a parts list that shows how each quantity was derived.",
+  },
+];
+
+export default async function Home() {
+  const key = await currentKey();
+  if (key) redirect("/records");
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="shell flex flex-1 flex-col justify-center py-14">
+      <header>
+        <p className="label">Built record · since the first pour</p>
+        <h1 className="mt-3 text-[2.75rem] font-bold leading-[0.95] tracking-tight">
+          HOME
+          <span className="text-[var(--accent)]">FAX</span>
+        </h1>
+        <p className="mt-4 text-[1.0625rem] leading-relaxed text-[var(--ink-2)]">
+          The permanent record of how a house was actually built — filmed stage by
+          stage, measured in 3D, and graded while the walls are still open.
+        </p>
+      </header>
+
+      <ol className="mt-9 space-y-5">
+        {STEPS.map((s) => (
+          <li key={s.n} className="flex gap-4">
+            <span className="tnum pt-0.5 text-sm font-semibold text-[var(--accent)]">{s.n}</span>
+            <div>
+              <h2 className="text-[0.9375rem] font-semibold">{s.title}</h2>
+              <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">{s.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+
+      <div className="card mt-10 p-5">
+        {authConfigured() ? (
+          <KeyGate />
+        ) : (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold">This deployment has no keys yet</h2>
+            <p className="text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
+              Set <code className="tnum">ACCESS_KEYS</code> to a comma-separated list of{" "}
+              <code className="tnum">secret:Label</code> pairs, then reload.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <p className="mt-6 text-center text-xs text-[var(--ink-3)]">
+        Contractor edition · access by key only
+      </p>
+    </main>
   );
 }

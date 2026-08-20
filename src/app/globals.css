@@ -1,26 +1,177 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/*
+ * HomeFAX — a permanent record of how a house was built.
+ * Warm paper, engineering type, one hot accent. Everything sized for a phone
+ * held one-handed on a job site: large tap targets, high contrast, no hairlines.
+ */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root {
+  --paper: #f6f2ec;
+  --surface: #ffffff;
+  --surface-2: #efe9e0;
+  --ink: #191512;
+  --ink-2: #635a50;
+  --ink-3: #928779;
+  --line: #ded6ca;
+  --accent: #b4441f;
+  --accent-soft: #f5e3dc;
+  --accent-ink: #ffffff;
+
+  --grade-a: #2f7d4f;
+  --grade-b: #5b8a36;
+  --grade-c: #b0821f;
+  --grade-d: #c2611e;
+  --grade-f: #a32b1c;
+
+  --shadow-card: 0 1px 2px rgba(25, 21, 18, 0.05), 0 8px 24px -12px rgba(25, 21, 18, 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --paper: #14110e;
+    --surface: #1d1915;
+    --surface-2: #27211a;
+    --ink: #f4efe6;
+    --ink-2: #b3a696;
+    --ink-3: #7f7466;
+    --line: #332c24;
+    --accent: #e4653b;
+    --accent-soft: #3a2018;
+    --accent-ink: #1a120e;
+
+    --grade-a: #57b37c;
+    --grade-b: #86bd57;
+    --grade-c: #d7ab48;
+    --grade-d: #e08a4a;
+    --grade-f: #e0614c;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -14px rgba(0, 0, 0, 0.7);
   }
 }
 
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
+}
+
+html {
+  background: var(--paper);
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  /* Keep content clear of the home indicator on iOS. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* The one-handed column. Everything lives inside it. */
+.shell {
+  width: 100%;
+  max-width: 30rem;
+  margin-inline: auto;
+  padding-inline: 1.125rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+/* Numbers that need to line up: scores, quantities, dimensions. */
+.tnum {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding-inline: 1.25rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.btn:active {
+  transform: scale(0.985);
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn:disabled {
+  opacity: 0.5;
+}
+
+/* The stage rail running down the record page. */
+.rail::before {
+  content: "";
+  position: absolute;
+  left: 1.09375rem;
+  top: 2.25rem;
+  bottom: -0.25rem;
+  width: 2px;
+  background: var(--line);
+}
+.rail:last-child::before {
+  display: none;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.pulsing {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+.sweeping::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 33%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.55;
+  animation: sweep 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulsing, .sweeping::after { animation: none; }
 }

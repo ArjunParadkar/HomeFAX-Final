@@ -1,0 +1,232 @@
+{
+  "records": [
+    {
+      "id": "Z1frTvh2giyK",
+      "slug": "1418-ridgemont-dr",
+      "address": "1418 Ridgemont Dr",
+      "owner": "R. Paradkar",
+      "contractor": "Paradkar Builders",
+      "keyId": "hfx-dev-key",
+      "createdAt": "2026-08-20T03:49:44.954Z"
+    }
+  ],
+  "captures": [
+    {
+      "id": "S_AVrlfZserd",
+      "recordId": "Z1frTvh2giyK",
+      "stage": "framing",
+      "jobId": "demo-1787197812428-framing",
+      "state": "done",
+      "sourceUrl": null,
+      "glbUrl": "procedural://framed-room",
+      "job": {
+        "id": "demo-1787197812428-framing",
+        "state": "done",
+        "steps": [
+          {
+            "key": "extract",
+            "label": "Selecting keyframes",
+            "state": "done"
+          },
+          {
+            "key": "features",
+            "label": "Matching features",
+            "state": "done"
+          },
+          {
+            "key": "sfm",
+            "label": "Solving camera poses",
+            "state": "done"
+          },
+          {
+            "key": "dense",
+            "label": "Dense stereo",
+            "state": "done"
+          },
+          {
+            "key": "mesh",
+            "label": "Meshing and texturing",
+            "state": "done"
+          },
+          {
+            "key": "measure",
+            "label": "Measuring geometry",
+            "state": "done"
+          },
+          {
+            "key": "pack",
+            "label": "Compressing model",
+            "state": "done"
+          }
+        ],
+        "result": {
+          "glbUrl": "procedural://framed-room",
+          "keyframeUrls": [],
+          "metrics": {
+            "framesRegistered": 60,
+            "framesSubmitted": 64,
+            "reprojectionErrorPx": 0.8821764225140214,
+            "pointCount": 1918096,
+            "triangleCount": 192762,
+            "meshCompleteness": 0.7959845524327829,
+            "sharpness": 164.84835324808955,
+            "metresPerUnit": 1,
+            "scaleSource": "stud_spacing",
+            "glbBytes": 3480093
+          },
+          "geometry": {
+            "boundingBoxM": [
+              7.9,
+              2.6,
+              6.1
+            ],
+            "floorAreaM2": 49.28439911780879,
+            "wallAreaM2": 105.70157496910542,
+            "ceilingHeightM": 2.44,
+            "planes": [
+              {
+                "kind": "floor",
+                "areaM2": 46,
+                "deviationDeg": 0.45765598881989716,
+                "flatnessMm": 5.01490190718323
+              },
+              {
+                "kind": "wall",
+                "areaM2": 21,
+                "deviationDeg": 0.7418523741886021,
+                "flatnessMm": 5.302094805287197
+              },
+              {
+                "kind": "wall",
+                "areaM2": 19,
+                "deviationDeg": 2.332412057183683,
+                "flatnessMm": 7.81283116992563
+              },
+              {
+                "kind": "wall",
+                "areaM2": 17,
+                "deviationDeg": 0.5440952537115663,
+                "flatnessMm": 6.988878109259531
+              },
+              {
+                "kind": "ceiling",
+                "areaM2": 44,
+                "deviationDeg": 0.8022301539080218,
+                "flatnessMm": 5.26751999091357
+              }
+            ],
+            "studSpacingIn": 15.639098636433483,
+            "studSpacingCv": 0.04930927003500983
+          }
+        }
+      },
+      "quality": {
+        "score": 83,
+        "grade": "B",
+        "dimensions": [
+          {
+            "dimension": "capture",
+            "score": 90.3499646901567,
+            "weight": 0.4,
+            "basis": "60/64 frames solved, 80% closed surface"
+          },
+          {
+            "dimension": "geometry",
+            "score": 77.96850653599515,
+            "weight": 0.6,
+            "basis": "0.88px solve, 1.21° mean plumb, 15.6in OC"
+          }
+        ],
+        "findings": [
+          {
+            "id": "geometry-plumb-190",
+            "severity": "minor",
+            "title": "Wall is 2.3° out of plumb",
+            "detail": "A 19.0 m² wall face leans 2.3° off vertical — about 99 mm of drift over a standard wall height.",
+            "dimension": "geometry",
+            "source": "geometry"
+          },
+          {
+            "id": "geometry-flat-190",
+            "severity": "minor",
+            "title": "Wall plane is bowed",
+            "detail": "Surface deviates 8 mm RMS from a true plane — a crowned stud or a proud sheet edge would read like this.",
+            "dimension": "geometry",
+            "source": "geometry"
+          },
+          {
+            "id": "geometry-flat-170",
+            "severity": "minor",
+            "title": "Wall plane is bowed",
+            "detail": "Surface deviates 7 mm RMS from a true plane — a crowned stud or a proud sheet edge would read like this.",
+            "dimension": "geometry",
+            "source": "geometry"
+          }
+        ],
+        "visionAvailable": false
+      },
+      "parts": [
+        {
+          "id": "framing:FAS-NAIL-16D",
+          "sku": "FAS-NAIL-16D",
+          "name": "16d framing nails",
+          "category": "fastener",
+          "spec": "5 lb collated",
+          "quantity": 1,
+          "unit": "box",
+          "basis": "derived",
+          "derivation": "roughly one 5 lb box per 120 studs framed",
+          "confidence": 0.5,
+          "unitCostUsd": 24.5,
+          "stage": "framing"
+        },
+        {
+          "id": "framing:LUM-2X4-PLATE",
+          "sku": "LUM-2X4-PLATE",
+          "name": "2x4 plate stock",
+          "category": "lumber",
+          "spec": "SPF, top and bottom plates",
+          "quantity": 426.4,
+          "unit": "lf",
+          "basis": "measured",
+          "derivation": "142 lf of wall x 3 plates (one bottom, doubled top)",
+          "confidence": 0.85,
+          "unitCostUsd": 0.72,
+          "stage": "framing"
+        },
+        {
+          "id": "framing:LUM-2X4-92",
+          "sku": "LUM-2X4-92",
+          "name": "2x4 stud",
+          "category": "lumber",
+          "spec": "92-5/8in precut SPF",
+          "quantity": 113,
+          "unit": "ea",
+          "basis": "measured",
+          "derivation": "142 lf of wall at 15.6in OC, plus 3 for corners",
+          "confidence": 0.85,
+          "unitCostUsd": 4.28,
+          "stage": "framing"
+        },
+        {
+          "id": "framing:SHT-OSB-716",
+          "sku": "SHT-OSB-716",
+          "name": "7/16in OSB sheathing",
+          "category": "lumber",
+          "spec": "4x8",
+          "quantity": 36,
+          "unit": "sheet",
+          "basis": "derived",
+          "derivation": "1138 sf of wall / 32 sf per 4x8 sheet",
+          "confidence": 0.765,
+          "unitCostUsd": 18.5,
+          "stage": "framing"
+        }
+      ],
+      "score": 83,
+      "notes": "The reconstruction returned no keyframes, so there was nothing to inspect visually.",
+      "createdAt": "2026-08-20T03:50:12.429Z",
+      "updatedAt": "2026-08-20T03:50:37.095Z"
+    }
+  ]
+}
