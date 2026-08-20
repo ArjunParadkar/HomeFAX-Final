@@ -15,8 +15,8 @@ const STEPS = [
   },
   {
     n: "03",
-    title: "Grade and take off",
-    body: "Every stage gets an inspection grade with the receipts, and a parts list that shows how each quantity was derived.",
+    title: "Keep it forever",
+    body: "Every stage's model is stored with the record — the house's history in 3D, from the first pour to the final walkthrough.",
   },
 ];
 
@@ -34,7 +34,7 @@ export default async function Home() {
         </h1>
         <p className="mt-4 text-[1.0625rem] leading-relaxed text-[var(--ink-2)]">
           The permanent record of how a house was actually built — filmed stage by
-          stage, measured in 3D, and graded while the walls are still open.
+          stage and turned into a 3D model while the walls are still open.
         </p>
       </header>
 

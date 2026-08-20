@@ -1,8 +1,6 @@
 import dynamicImport from "next/dynamic";
 import { notFound, redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
-import PartsTable from "@/components/PartsTable";
-import QualityPanel from "@/components/QualityPanel";
 import CaptureFlow from "@/components/CaptureFlow";
 import { currentKey } from "@/lib/auth";
 import { reconConfigured } from "@/lib/recon";
@@ -41,6 +39,7 @@ export default async function StagePage({
   const done = capture?.state === "done";
   const metrics = capture?.job?.result?.metrics;
   const geometry = capture?.job?.result?.geometry;
+  const simulated = capture?.glbUrl === "procedural://framed-room";
 
   return (
     <>
@@ -54,45 +53,40 @@ export default async function StagePage({
         {done && capture?.glbUrl ? (
           <>
             <section className="card overflow-hidden">
-              <ModelViewer url={capture.glbUrl} className="h-[62vw] max-h-96 w-full" />
-              {metrics && (
-                <dl className="grid grid-cols-3 divide-x divide-[var(--line)] border-t border-[var(--line)]">
-                  <Stat
-                    label="Frames"
-                    value={`${metrics.framesRegistered}/${metrics.framesSubmitted}`}
-                  />
+              <ModelViewer url={capture.glbUrl} className="h-[70vw] max-h-[26rem] w-full" />
+              <dl className="grid grid-cols-3 divide-x divide-[var(--line)] border-t border-[var(--line)]">
+                <Stat label="Filmed" value={formatDate(capture.createdAt)} />
+                <Stat
+                  label="Frames"
+                  value={metrics ? `${metrics.framesRegistered}/${metrics.framesSubmitted}` : "—"}
+                />
+                <Stat
+                  label="Size"
+                  value={metrics ? `${(metrics.glbBytes / 1_048_576).toFixed(1)} MB` : "—"}
+                />
+              </dl>
+              {geometry && !simulated && (
+                <dl className="grid grid-cols-2 divide-x divide-[var(--line)] border-t border-[var(--line)]">
                   <Stat
                     label="Floor area"
+                    value={`${Math.round(geometry.floorAreaM2 / 0.092903)} sf`}
+                  />
+                  <Stat
+                    label="Ceiling"
                     value={
-                      geometry
-                        ? `${Math.round(geometry.floorAreaM2 / 0.092903)} sf`
+                      geometry.ceilingHeightM
+                        ? `${(geometry.ceilingHeightM / 0.3048).toFixed(1)} ft`
                         : "—"
                     }
                   />
-                  <Stat
-                    label="Model"
-                    value={`${(metrics.glbBytes / 1_048_576).toFixed(1)} MB`}
-                  />
                 </dl>
               )}
-              {capture.glbUrl === "procedural://framed-room" && (
+              {simulated && (
                 <p className="border-t border-[var(--line)] px-5 py-3 text-xs leading-relaxed text-[var(--ink-3)]">
-                  Simulated geometry — no reconstruction endpoint was configured when this stage was
-                  recorded. Numbers below are computed from it exactly as they would be from a real
-                  scan.
+                  Simulated geometry — no reconstruction endpoint was configured when this stage
+                  was filmed. This is not a model of the room you filmed.
                 </p>
               )}
-            </section>
-
-            {capture.notes && (
-              <p className="text-[0.875rem] leading-relaxed text-[var(--ink-2)]">{capture.notes}</p>
-            )}
-
-            {capture.quality && <QualityPanel report={capture.quality} />}
-
-            <section className="card overflow-hidden">
-              <h2 className="label px-5 pt-4">Parts from this stage</h2>
-              <PartsTable parts={capture.parts} showTotals={false} />
             </section>
 
             <CaptureFlow
@@ -105,26 +99,11 @@ export default async function StagePage({
               initialSteps={[]}
             />
             <p className="text-center text-xs text-[var(--ink-3)]">
-              Refilming replaces this stage's record.
+              Refilming replaces this stage&apos;s model.
             </p>
           </>
         ) : (
           <>
-            <section>
-              <h2 className="label mb-2">What is being checked</h2>
-              <ul className="space-y-2">
-                {def.checklist.map((c) => (
-                  <li
-                    key={c}
-                    className="flex gap-2.5 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]"
-                  >
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--ink-3)]" />
-                    {c}
-                  </li>
-                ))}
-              </ul>
-            </section>
-
             <CaptureFlow
               slug={slug}
               stage={stage}
@@ -145,6 +124,10 @@ export default async function StagePage({
       </main>
     </>
   );
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
-import { GradeBadge, GradeRing } from "@/components/Grade";
 import { currentKey } from "@/lib/auth";
-import { cumulativeParts, partsSubtotal } from "@/lib/parts";
-import { toGrade } from "@/lib/quality";
 import { STAGES } from "@/lib/stages";
 import { getRecord, listCaptures } from "@/lib/store";
-import type { StageId } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const IN_FLIGHT = new Set(["queued", "extracting", "registering", "reconstructing", "meshing", "analyzing"]);
+const IN_FLIGHT = new Set([
+  "queued",
+  "extracting",
+  "registering",
+  "reconstructing",
+  "meshing",
+  "analyzing",
+]);
 
 export default async function RecordPage({ params }: PageProps<"/records/[slug]">) {
   const key = await currentKey();
@@ -23,51 +26,31 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
 
   const captures = await listCaptures(record.id);
   const byStage = new Map(captures.map((c) => [c.stage, c]));
-
-  const graded = captures.filter((c) => c.state === "done" && c.score != null);
-  const mean =
-    graded.length > 0 ? graded.reduce((a, c) => a + (c.score ?? 0), 0) / graded.length : null;
-
-  const parts = cumulativeParts(
-    captures
-      .filter((c) => c.state === "done")
-      .map((c) => ({ stage: c.stage as StageId, parts: c.parts })),
-  );
-  const subtotal = partsSubtotal(parts);
+  const recorded = captures.filter((c) => c.state === "done").length;
 
   return (
     <>
       <AppHeader
         back={{ href: "/records", label: "Records" }}
         title={record.address}
-        subtitle={record.owner ? `For ${record.owner}` : record.contractor ?? undefined}
+        subtitle={record.owner ? `For ${record.owner}` : (record.contractor ?? undefined)}
       />
 
       <main className="shell flex-1 space-y-6 py-6">
-        <section className="card p-5">
-          {mean != null ? (
-            <GradeRing
-              score={mean}
-              grade={toGrade(mean)}
-              caption={`Average across ${graded.length} recorded stage${graded.length === 1 ? "" : "s"}. Each stage keeps its own grade and findings.`}
-            />
-          ) : (
-            <div>
-              <h2 className="text-sm font-semibold">Nothing recorded yet</h2>
-              <p className="mt-1 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
-                Pick the stage you are standing in and film one slow lap. Everything else follows
-                from that.
-              </p>
-            </div>
-          )}
-        </section>
+        <p className="text-sm leading-relaxed text-[var(--ink-2)]">
+          <span className="tnum font-semibold text-[var(--ink)]">
+            {recorded} of {STAGES.length}
+          </span>{" "}
+          stages have a model. Tap a stage to film it or to open what is already there.
+        </p>
 
         <section>
-          <h2 className="label mb-3">Stages</h2>
           <ol>
             {STAGES.map((stage, i) => {
               const capture = byStage.get(stage.id);
               const state = capture?.state;
+              const done = state === "done";
+              const working = state != null && IN_FLIGHT.has(state);
               return (
                 <li key={stage.id} className="rail relative pb-2">
                   <Link
@@ -77,11 +60,9 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
                     <span
                       className="tnum relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-semibold"
                       style={{
-                        borderColor:
-                          state === "done" ? "transparent" : "var(--line)",
-                        background:
-                          state === "done" ? "var(--accent)" : "var(--surface)",
-                        color: state === "done" ? "var(--accent-ink)" : "var(--ink-3)",
+                        borderColor: done ? "transparent" : "var(--line)",
+                        background: done ? "var(--accent)" : "var(--surface)",
+                        color: done ? "var(--accent-ink)" : "var(--ink-3)",
                       }}
                     >
                       {String(i + 1).padStart(2, "0")}
@@ -91,20 +72,18 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
                         {stage.label}
                       </span>
                       <span className="block text-xs text-[var(--ink-3)]">
-                        {state === "done"
-                          ? capture?.notes
-                            ? truncate(capture.notes, 64)
-                            : "Recorded"
+                        {done
+                          ? "Model ready"
                           : state === "failed"
                             ? "Reconstruction failed — refilm"
-                            : state && IN_FLIGHT.has(state)
-                              ? "Processing…"
-                              : stage.blurb}
+                            : working
+                              ? "Building model…"
+                              : "Not filmed"}
                       </span>
                     </span>
-                    {capture?.state === "done" && capture.score != null ? (
-                      <GradeBadge grade={toGrade(capture.score)} size="sm" />
-                    ) : state && IN_FLIGHT.has(state) ? (
+                    {done ? (
+                      <ModelDot />
+                    ) : working ? (
                       <span className="pulsing h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]" />
                     ) : null}
                   </Link>
@@ -113,33 +92,21 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
             })}
           </ol>
         </section>
-
-        <section className="card overflow-hidden">
-          <Link href={`/records/${record.slug}/parts`} className="flex items-center gap-4 p-5">
-            <div className="flex-1">
-              <h2 className="text-sm font-semibold">Cumulative parts list</h2>
-              <p className="mt-0.5 text-xs text-[var(--ink-3)]">
-                {parts.length === 0
-                  ? "Builds up as stages are recorded"
-                  : `${parts.length} line${parts.length === 1 ? "" : "s"} · $${subtotal.toLocaleString(undefined, { maximumFractionDigits: 0 })} in material`}
-              </p>
-            </div>
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <path
-                d="m6 3.5 4.5 4.5L6 12.5"
-                stroke="var(--ink-3)"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </Link>
-        </section>
       </main>
     </>
   );
 }
 
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`;
+function ModelDot() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-label="Model ready">
+      <path
+        d="M10 2.6 17 6.5v7L10 17.4 3 13.5v-7L10 2.6Z"
+        stroke="var(--accent)"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path d="M3 6.5 10 10.4l7-3.9M10 10.4v7" stroke="var(--accent)" strokeWidth="1.5" />
+    </svg>
+  );
 }

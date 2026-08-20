@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
-import { GradeBadge } from "@/components/Grade";
-import { toGrade } from "@/lib/quality";
 import { STAGES } from "@/lib/stages";
 import { currentKey } from "@/lib/auth";
 import { listCaptures, listRecords } from "@/lib/store";
@@ -18,12 +16,8 @@ export default async function RecordsPage() {
   const summaries = await Promise.all(
     records.map(async (r) => {
       const captures = await listCaptures(r.id);
-      const graded = captures.filter((c) => c.state === "done" && c.score != null);
-      const mean =
-        graded.length > 0
-          ? graded.reduce((a, c) => a + (c.score ?? 0), 0) / graded.length
-          : null;
-      return { record: r, done: graded.length, total: STAGES.length, mean };
+      const done = captures.filter((c) => c.state === "done").length;
+      return { record: r, done, total: STAGES.length };
     }),
   );
 
@@ -37,7 +31,7 @@ export default async function RecordsPage() {
           </p>
         ) : (
           <ul className="space-y-3">
-            {summaries.map(({ record, done, total, mean }) => (
+            {summaries.map(({ record, done, total }) => (
               <li key={record.id}>
                 <Link href={`/records/${record.slug}`} className="card flex items-center gap-4 p-4">
                   <div className="min-w-0 flex-1">
@@ -48,15 +42,19 @@ export default async function RecordsPage() {
                       <span className="tnum">
                         {done}/{total}
                       </span>{" "}
-                      stages recorded
+                      stages filmed
                       {record.owner ? ` · ${record.owner}` : ""}
                     </p>
                   </div>
-                  {mean != null ? (
-                    <GradeBadge grade={toGrade(mean)} />
-                  ) : (
-                    <span className="label shrink-0">new</span>
-                  )}
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+                    <path
+                      d="m6 3.5 4.5 4.5L6 12.5"
+                      stroke="var(--ink-3)"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </Link>
               </li>
             ))}
