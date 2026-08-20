@@ -45,8 +45,8 @@ def feature_extraction(workdir: Path, log: list[str]) -> None:
             # single device share intrinsics, so one camera is the right model.
             "--ImageReader.camera_model", "PINHOLE",
             "--ImageReader.single_camera", "1",
-            "--SiftExtraction.use_gpu", "1",
-            "--SiftExtraction.max_image_size", "1600",
+            "--FeatureExtraction.use_gpu", "1",
+            "--FeatureExtraction.max_image_size", "1600",
             # Interiors are feature-poor; more features per image is the cheapest
             # way to keep a blank-drywall pass from dropping out entirely.
             "--SiftExtraction.max_num_features", "16384",
@@ -65,16 +65,16 @@ def matching(workdir: Path, num_images: int, log: list[str]) -> None:
         _run(
             ["colmap", "exhaustive_matcher",
              "--database_path", db,
-             "--SiftMatching.use_gpu", "1",
-             "--SiftMatching.guided_matching", "1"],
+             "--FeatureMatching.use_gpu", "1",
+             "--FeatureMatching.guided_matching", "1"],
             log,
         )
     else:
         _run(
             ["colmap", "sequential_matcher",
              "--database_path", db,
-             "--SiftMatching.use_gpu", "1",
-             "--SiftMatching.guided_matching", "1",
+             "--FeatureMatching.use_gpu", "1",
+             "--FeatureMatching.guided_matching", "1",
              "--SequentialMatching.overlap", "15",
              "--SequentialMatching.quadratic_overlap", "1"],
             log,
