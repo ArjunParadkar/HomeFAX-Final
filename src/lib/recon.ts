@@ -70,6 +70,8 @@ export async function submitRecon(req: ReconRequest): Promise<string> {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
+      // RunPod's HTTP proxy 403s requests with library-default user agents.
+      "User-Agent": "homefax/1.0",
     },
     body: JSON.stringify({ input }),
   });
@@ -104,7 +106,7 @@ export async function pollRecon(jobId: string): Promise<ReconJob> {
     : [endpoint(`status/${id}`), process.env.RUNPOD_API_KEY!];
 
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "homefax/1.0" },
     cache: "no-store",
   });
   if (!res.ok) {

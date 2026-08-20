@@ -9,14 +9,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv ca-certificates curl xvfb ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+      python3 python3-pip python3-venv ca-certificates curl ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Draco compression for the delivered model — a phone should not have to pull
-# 40 MB of mesh over LTE.
-RUN npm install -g @gltf-transform/cli@4
+# Draco compression is optional by design: mesh.compress() falls back to the
+# uncompressed GLB when gltf-transform is absent. Leaving node out keeps the
+# image ~1.5 GB smaller, which matters at cold-start pull time.
 
 COPY services/recon/requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --break-system-packages -r /tmp/requirements.txt
