@@ -35,36 +35,42 @@ if [ -z "${RECON_KEY:-}" ]; then
   exit 1
 fi
 
-say "checking the box"
-command -v colmap >/dev/null 2>&1 && echo "colmap: $(command -v colmap)" || {
-  echo "colmap is NOT installed on this image." >&2
-  echo "Redeploy the pod from the colmap/colmap:latest image — a source build costs" >&2
-  echo "about 40 minutes of rental to reproduce what that image already ships." >&2
-  exit 1
-}
-nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || {
-  echo "No GPU visible. Dense stereo will not run." >&2
-  exit 1
-}
-
 say "ssh access"
 # The COLMAP image is not a RunPod-managed one, so nothing sets up sshd or
 # injects keys. Without this there is no way into the box when a solve misbehaves.
 if [ -n "${PUBLIC_KEY:-}" ]; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq --no-install-recommends openssh-server >/dev/null
+  apt-get update -qq || true
+  apt-get install -y -qq --no-install-recommends openssh-server >/dev/null || true
   mkdir -p /root/.ssh /run/sshd
   grep -qxF "$PUBLIC_KEY" /root/.ssh/authorized_keys 2>/dev/null \
     || echo "$PUBLIC_KEY" >> /root/.ssh/authorized_keys
   chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys
   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
   pkill sshd 2>/dev/null || true
-  /usr/sbin/sshd
-  echo "sshd listening on 22"
+  if [ -x /usr/sbin/sshd ]; then
+    /usr/sbin/sshd && echo "sshd listening on 22" || echo "sshd failed to start" >&2
+  else
+    echo "sshd not available on this image" >&2
+  fi
 else
   echo "no PUBLIC_KEY set — skipping ssh"
 fi
+
+say "checking the box"
+fatal=0
+if command -v colmap >/dev/null 2>&1; then
+  echo "colmap: $(command -v colmap)"
+else
+  echo "colmap is NOT installed on this image. Use colmap/colmap:latest." >&2
+  fatal=1
+fi
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+else
+  echo "nvidia-smi not found — cannot confirm a GPU is attached." >&2
+fi
+[ "$fatal" = "0" ] || exit 1
 
 say "system packages"
 export DEBIAN_FRONTEND=noninteractive
