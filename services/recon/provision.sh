@@ -7,6 +7,12 @@
 #   export BLOB_READ_WRITE_TOKEN=...# where the finished GLB goes
 #   bash provision.sh
 #
+# It is also the pod's container start command. In that role the worker must
+# hold the foreground — a backgrounded server would let the container exit and
+# RunPod would stop the pod:
+#
+#   HOMEFAX_FOREGROUND=1 bash provision.sh
+#
 # It is idempotent — re-running after a pod restart just brings the worker back.
 #
 # The pod should be started from the `colmap/colmap:latest` image. COLMAP's
@@ -40,6 +46,25 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || {
   echo "No GPU visible. Dense stereo will not run." >&2
   exit 1
 }
+
+say "ssh access"
+# The COLMAP image is not a RunPod-managed one, so nothing sets up sshd or
+# injects keys. Without this there is no way into the box when a solve misbehaves.
+if [ -n "${PUBLIC_KEY:-}" ]; then
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq --no-install-recommends openssh-server >/dev/null
+  mkdir -p /root/.ssh /run/sshd
+  grep -qxF "$PUBLIC_KEY" /root/.ssh/authorized_keys 2>/dev/null \
+    || echo "$PUBLIC_KEY" >> /root/.ssh/authorized_keys
+  chmod 700 /root/.ssh && chmod 600 /root/.ssh/authorized_keys
+  sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+  pkill sshd 2>/dev/null || true
+  /usr/sbin/sshd
+  echo "sshd listening on 22"
+else
+  echo "no PUBLIC_KEY set — skipping ssh"
+fi
 
 say "system packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -77,10 +102,19 @@ say "starting the worker"
 pkill -f "python3 server.py" 2>/dev/null || true
 sleep 1
 cd "$APP_DIR/services/recon/app"
-RECON_KEY="$RECON_KEY" \
-BLOB_READ_WRITE_TOKEN="${BLOB_READ_WRITE_TOKEN:-}" \
-PORT="$PORT" \
-  nohup python3 server.py >"$LOG" 2>&1 &
+
+export RECON_KEY
+export BLOB_READ_WRITE_TOKEN="${BLOB_READ_WRITE_TOKEN:-}"
+export PORT
+
+if [ "${HOMEFAX_FOREGROUND:-0}" = "1" ]; then
+  # Become the container's main process, writing to stdout so the output shows
+  # up as RunPod container logs rather than hiding in a file.
+  echo "running in the foreground as the container's main process"
+  exec python3 -u server.py
+fi
+
+nohup python3 -u server.py >"$LOG" 2>&1 &
 
 sleep 3
 if curl -fsS "http://127.0.0.1:$PORT/health"; then
