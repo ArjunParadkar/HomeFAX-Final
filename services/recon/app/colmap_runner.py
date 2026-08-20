@@ -27,12 +27,14 @@ class SolveStats:
 
 def _run(args: list[str], log: list[str]) -> str:
     proc = subprocess.run(args, capture_output=True, text=True)
-    tail = (proc.stdout or "")[-4000:]
-    log.append(f"$ {' '.join(args[:3])} …\n{tail}")
+    # COLMAP logs through glog, which writes to stderr — stdout is usually empty.
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    log.append(f"$ {' '.join(args[:3])} …\n{combined[-4000:]}")
     if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout or "")[-1500:]
-        raise ColmapError(f"{args[1] if len(args) > 1 else args[0]} failed: {err}")
-    return proc.stdout or ""
+        raise ColmapError(
+            f"{args[1] if len(args) > 1 else args[0]} failed: {combined[-1500:]}"
+        )
+    return combined
 
 
 def feature_extraction(workdir: Path, log: list[str]) -> None:
@@ -104,19 +106,48 @@ def mapper(workdir: Path, log: list[str]) -> Path:
 
 
 def solve_stats(model_dir: Path, submitted: int, log: list[str]) -> SolveStats:
-    out = _run(["colmap", "model_analyzer", "--path", str(model_dir)], log)
-    registered, points, error = 0, 0, 0.0
-    for line in out.splitlines() + log[-1].splitlines():
-        low = line.lower().strip()
-        try:
-            if low.startswith("registered images"):
-                registered = int(low.split(":")[1].strip())
-            elif low.startswith("points:"):
-                points = int(low.split(":")[1].strip())
-            elif low.startswith("mean reprojection error"):
-                error = float(low.split(":")[1].strip().rstrip("px").strip())
-        except (ValueError, IndexError):
-            continue
+    """Read the solve's own output files rather than scraping logs.
+
+    The first version parsed model_analyzer's text and broke the moment the
+    output stream and format shifted between COLMAP versions. The TXT model is
+    a documented format: images.txt has two lines per registered image, and
+    points3D.txt carries each point's reprojection error in column 8.
+    """
+    txt_dir = model_dir / "txt"
+    txt_dir.mkdir(exist_ok=True)
+    _run(
+        ["colmap", "model_converter",
+         "--input_path", str(model_dir),
+         "--output_path", str(txt_dir),
+         "--output_type", "TXT"],
+        log,
+    )
+
+    registered = 0
+    images_txt = txt_dir / "images.txt"
+    if images_txt.exists():
+        data_lines = [
+            l for l in images_txt.read_text().splitlines()
+            if l.strip() and not l.startswith("#")
+        ]
+        registered = len(data_lines) // 2
+
+    points = 0
+    err_sum = 0.0
+    points_txt = txt_dir / "points3D.txt"
+    if points_txt.exists():
+        with points_txt.open() as fh:
+            for line in fh:
+                if not line.strip() or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 8:
+                    points += 1
+                    try:
+                        err_sum += float(parts[7])
+                    except ValueError:
+                        pass
+    error = err_sum / points if points else 0.0
     return SolveStats(registered, submitted, error, points)
 
 
