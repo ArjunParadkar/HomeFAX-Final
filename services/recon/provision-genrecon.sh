@@ -79,11 +79,15 @@ done_marker sysdeps || {
 
 say "checkpoints (13.7 GB, parallel, resumable)"
 mkdir -p "$CK"
+CKPT_PIDS=""
 for f in sparse_structure.pt shape_slat.pt texture_slat.pt; do
-  [ -f "$STAGES/ckpt_$f" ] || (
-    curl -fL --retry 5 -C - -o "$CK/$f" "https://kaldir.vc.cit.tum.de/genrecon/$f" \
-      && touch "$STAGES/ckpt_$f" && echo "checkpoint $f done"
-  ) &
+  [ -f "$STAGES/ckpt_$f" ] || {
+    (
+      curl -fL --retry 5 -C - -o "$CK/$f" "https://kaldir.vc.cit.tum.de/genrecon/$f" \
+        && touch "$STAGES/ckpt_$f" && echo "checkpoint $f done"
+    ) &
+    CKPT_PIDS="$CKPT_PIDS $!"
+  }
 done
 
 say "miniforge"
@@ -128,7 +132,9 @@ done_marker flashattn || {
 }
 
 say "waiting for checkpoint downloads"
-wait
+# Wait only for the download PIDs — a bare `wait` would also wait on the
+# infinite blob-log uploader and hang here forever.
+for pid in $CKPT_PIDS; do wait "$pid" || true; done
 for f in sparse_structure.pt shape_slat.pt texture_slat.pt; do
   [ -f "$STAGES/ckpt_$f" ] || { echo "checkpoint $f missing" >&2; exit 1; }
 done
