@@ -10,8 +10,10 @@ import numpy as np
 import open3d as o3d
 import trimesh
 
-# A phone can orbit this comfortably; beyond it, mid-range Androids stutter.
-TARGET_TRIANGLES = 180_000
+# A phone can orbit this comfortably. Color is per-vertex, so triangle budget
+# IS color resolution — 450k keeps the Draco GLB under ~2 MB and modern phones
+# handle it; the earlier 180k read visibly low-poly up close.
+TARGET_TRIANGLES = 450_000
 
 
 def prepare(
