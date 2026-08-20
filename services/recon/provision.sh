@@ -13,6 +13,10 @@
 #
 #   HOMEFAX_FOREGROUND=1 bash provision.sh
 #
+# Set HOMEFAX_MODE=serverless to run the RunPod serverless handler instead of
+# the HTTP server. That lets one image serve both shapes: a serverless endpoint
+# provisions itself on cold start, so nothing has to be published to a registry.
+#
 # It is idempotent — re-running after a pod restart just brings the worker back.
 #
 # The pod should be started from the `colmap/colmap:latest` image. COLMAP's
@@ -30,10 +34,11 @@ LOG="${LOG:-/var/log/homefax-recon.log}"
 
 say() { printf '\n=== %s\n' "$1"; }
 
-if [ -z "${RECON_KEY:-}" ]; then
+if [ "${HOMEFAX_MODE:-server}" != "serverless" ] && [ -z "${RECON_KEY:-}" ]; then
   echo "RECON_KEY is not set. Refusing to start an unauthenticated worker on a public port." >&2
   exit 1
 fi
+RECON_KEY="${RECON_KEY:-}"
 
 say "ssh access"
 # The COLMAP image is not a RunPod-managed one, so nothing sets up sshd or
@@ -81,8 +86,12 @@ apt-get install -y -qq --no-install-recommends \
 say "python dependencies"
 # --break-system-packages is correct here: the container IS the environment,
 # and a venv only adds a path to get wrong after a restart.
-python3 -m pip install --quiet --break-system-packages --no-cache-dir \
-  numpy 'open3d==0.19.0' trimesh pillow requests scipy
+PIP_PKGS="numpy open3d==0.19.0 trimesh pillow requests scipy"
+if [ "${HOMEFAX_MODE:-server}" = "serverless" ]; then
+  PIP_PKGS="$PIP_PKGS runpod"
+fi
+# shellcheck disable=SC2086
+python3 -m pip install --quiet --break-system-packages --no-cache-dir $PIP_PKGS
 
 say "gltf-transform (Draco compression)"
 if ! command -v gltf-transform >/dev/null 2>&1; then
@@ -112,6 +121,13 @@ cd "$APP_DIR/services/recon/app"
 export RECON_KEY
 export BLOB_READ_WRITE_TOKEN="${BLOB_READ_WRITE_TOKEN:-}"
 export PORT
+
+if [ "${HOMEFAX_MODE:-server}" = "serverless" ]; then
+  # The worker becomes a RunPod serverless consumer: it polls for jobs rather
+  # than listening on a port, and must hold the foreground.
+  echo "starting the RunPod serverless handler"
+  exec python3 -u handler.py
+fi
 
 if [ "${HOMEFAX_FOREGROUND:-0}" = "1" ]; then
   # Become the container's main process, writing to stdout so the output shows
