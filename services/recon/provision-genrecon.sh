@@ -26,6 +26,25 @@ STAGES=$WS/.stages
 mkdir -p "$STAGES"
 
 say() { printf '\n=== %s [%s]\n' "$1" "$(date -u +%H:%M:%S)"; }
+
+# Every line of this run also lands in Blob storage, because SSH into a pod is
+# not always reachable and a provisioning failure with no log is undebuggable —
+# that lesson is already paid for.
+LOGF=$WS/provision.log
+: > "$LOGF"
+exec > >(tee -a "$LOGF") 2>&1
+if [ -n "${BLOB_READ_WRITE_TOKEN:-}" ]; then
+  (
+    while true; do
+      curl -fsS -X PUT "https://blob.vercel-storage.com/podlogs/genrecon-provision.log" \
+        -H "authorization: Bearer $BLOB_READ_WRITE_TOKEN" \
+        -H "x-api-version: 7" -H "x-content-type: text/plain" \
+        -H "x-add-random-suffix: 0" -H "x-allow-overwrite: 1" \
+        --data-binary @"$LOGF" >/dev/null 2>&1
+      sleep 45
+    done
+  ) &
+fi
 done_marker() { [ -f "$STAGES/$1" ]; }
 mark() { touch "$STAGES/$1"; }
 
