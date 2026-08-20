@@ -151,7 +151,7 @@ def solve_stats(model_dir: Path, submitted: int, log: list[str]) -> SolveStats:
     return SolveStats(registered, submitted, error, points)
 
 
-def dense(workdir: Path, log: list[str], max_image_size: int = 1400) -> Path:
+def dense(workdir: Path, log: list[str], max_image_size: int = 1100) -> Path:
     """Undistort, PatchMatch stereo, fuse. This is where the GPU time goes."""
     dense_dir = workdir / "dense"
     _run(
@@ -168,11 +168,13 @@ def dense(workdir: Path, log: list[str], max_image_size: int = 1400) -> Path:
          "--workspace_path", str(dense_dir),
          "--workspace_format", "COLMAP",
          "--PatchMatchStereo.geom_consistency", "true",
-         # Window and iteration counts trade VRAM for detail. These settle a
-         # room in a couple of minutes on a 24 GB card without spilling.
-         "--PatchMatchStereo.window_radius", "5",
-         "--PatchMatchStereo.num_samples", "15",
-         "--PatchMatchStereo.num_iterations", "5",
+         # Stereo cost scales with pixels x window x samples x iterations. The
+         # first live run at 1400px/5/15/5 took 43 minutes on an RTX 4090 for a
+         # 40-frame scan; these settings bring that to roughly ten, and the
+         # measurement stage never needed the extra density to begin with.
+         "--PatchMatchStereo.window_radius", "4",
+         "--PatchMatchStereo.num_samples", "10",
+         "--PatchMatchStereo.num_iterations", "4",
          "--PatchMatchStereo.cache_size", "24"],
         log,
     )
