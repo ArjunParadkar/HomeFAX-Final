@@ -19,12 +19,17 @@ import subprocess
 import tempfile
 import time
 import traceback
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
 import requests
-import runpod
+
+try:
+    import runpod
+except ImportError:  # running as a plain HTTP worker on a pod
+    runpod = None
 
 import blob
 import colmap_runner as colmap
@@ -35,11 +40,11 @@ MAX_FRAMES = 120
 DOWNLOAD_TIMEOUT = 120
 
 
-def _progress(job, step: str, detail: str = "") -> None:
-    try:
-        runpod.serverless.progress_update(job, {"step": step, "detail": detail})
-    except Exception:  # progress is best-effort; never fail a job over it
-        pass
+ProgressFn = Callable[[str, str], None]
+
+
+def _noop_progress(step: str, detail: str = "") -> None:
+    return None
 
 
 def _download(url: str, dest: Path) -> Path | None:
@@ -113,8 +118,13 @@ def _frames_from_video(video_url: str, images_dir: Path, max_frames: int) -> lis
     return urls
 
 
-def handler(job):
-    job_input = job.get("input") or {}
+def run_pipeline(job_input: dict, on_progress: ProgressFn = _noop_progress) -> dict:
+    """The whole reconstruction. Transport-agnostic on purpose.
+
+    RunPod serverless calls this through `handler`; the standalone HTTP server
+    in server.py calls it directly. Same code path either way, so a pod and a
+    serverless endpoint cannot drift apart.
+    """
     image_urls: list[str] = job_input.get("image_urls") or []
     video_url: str | None = job_input.get("video_url")
     stage: str = job_input.get("stage") or "unknown"
@@ -127,7 +137,7 @@ def handler(job):
     try:
         images_dir = workdir / "images"
 
-        _progress(job, "extract", "fetching frames")
+        on_progress("extract", "fetching frames")
         if image_urls:
             kept = _fetch_images(image_urls, images_dir)
         elif video_url:
@@ -142,10 +152,10 @@ def handler(job):
                 "error": f"Only {submitted} frames arrived; a reconstruction needs at least 8.",
             }
 
-        _progress(job, "features", f"{submitted} frames")
+        on_progress("features", f"{submitted} frames")
         colmap.feature_extraction(workdir, log)
 
-        _progress(job, "sfm", "matching and solving")
+        on_progress("sfm", "matching and solving")
         colmap.matching(workdir, submitted, log)
         model_dir = colmap.mapper(workdir, log)
         stats = colmap.solve_stats(model_dir, submitted, log)
@@ -159,19 +169,19 @@ def handler(job):
                 ),
             }
 
-        _progress(job, "dense", f"{stats.images_registered} views registered")
+        on_progress("dense", f"{stats.images_registered} views registered")
         fused = colmap.dense(workdir, log)
 
-        _progress(job, "mesh", "poisson surface")
+        on_progress("mesh", "poisson surface")
         poisson = colmap.poisson_mesh(fused, log)
 
-        _progress(job, "measure", "planes and spacing")
+        on_progress("measure", "planes and spacing")
         measurements, rotation, translation = geometry.measure(str(fused))
         prepared, completeness = meshlib.prepare(
             poisson, rotation, translation, measurements.metres_per_unit
         )
 
-        _progress(job, "pack", "compressing model")
+        on_progress("pack", "compressing model")
         glb_path = meshlib.export_glb(prepared, workdir / "scene.glb")
         glb_path = meshlib.compress(glb_path)
         glb_bytes = glb_path.read_bytes()
@@ -255,6 +265,18 @@ def _median_sharpness(images_dir: Path) -> float:
         )
         values.append(float(lap.var()))
     return round(float(np.median(values)), 2) if values else 0.0
+
+
+def handler(job):
+    """RunPod serverless adapter."""
+
+    def progress(step: str, detail: str = "") -> None:
+        try:
+            runpod.serverless.progress_update(job, {"step": step, "detail": detail})
+        except Exception:  # progress is best-effort; never fail a job over it
+            pass
+
+    return run_pipeline(job.get("input") or {}, progress)
 
 
 if __name__ == "__main__":

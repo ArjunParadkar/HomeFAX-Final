@@ -1,18 +1,28 @@
 import type { JobStep, ReconJob, ReconResult, StageId } from "./types";
 
 /**
- * Client for the reconstruction worker.
+ * Client for the reconstruction worker, in three flavours.
  *
- * In production this is a RunPod serverless endpoint (see services/recon) that
- * bills per second and scales to zero. When RUNPOD_ENDPOINT_ID is absent the
- * module falls back to a local simulation so the whole app — upload, timeline,
- * grading, parts — is still walkable. Simulated jobs are flagged everywhere
- * they surface; they are never presented as a real reconstruction.
+ *   serverless — a RunPod serverless endpoint. Bills per second, scales to
+ *                zero, and is the right shape for bursty contractor traffic.
+ *   pod        — a rented RunPod Pod running services/recon/app/server.py.
+ *                Bills by the hour whether or not anyone films anything, but
+ *                it is warm, so there is no cold start on the first stage.
+ *   demo       — neither is configured. Everything else in the app still runs,
+ *                and every surface says the geometry is simulated.
+ *
+ * Both real modes drive the identical pipeline; only the transport differs.
  */
 
-export const reconConfigured = Boolean(
-  process.env.RUNPOD_ENDPOINT_ID && process.env.RUNPOD_API_KEY,
-);
+export type ReconMode = "serverless" | "pod" | "demo";
+
+export function reconMode(): ReconMode {
+  if (process.env.RUNPOD_ENDPOINT_ID && process.env.RUNPOD_API_KEY) return "serverless";
+  if (process.env.RECON_URL && process.env.RECON_KEY) return "pod";
+  return "demo";
+}
+
+export const reconConfigured = reconMode() !== "demo";
 
 const STEP_TEMPLATE: { key: string; label: string }[] = [
   { key: "extract", label: "Selecting keyframes" },
@@ -35,48 +45,70 @@ function endpoint(path: string): string {
   return `https://api.runpod.ai/v2/${process.env.RUNPOD_ENDPOINT_ID}/${path}`;
 }
 
-export async function submitRecon(req: ReconRequest): Promise<string> {
-  if (!reconConfigured) return `demo-${Date.now()}-${req.stage}`;
+function podUrl(path: string): string {
+  return `${(process.env.RECON_URL ?? "").replace(/\/$/, "")}/${path}`;
+}
 
-  const res = await fetch(endpoint("run"), {
+export async function submitRecon(req: ReconRequest): Promise<string> {
+  const mode = reconMode();
+  if (mode === "demo") return `demo-${Date.now()}-${req.stage}`;
+
+  const input = {
+    video_url: req.videoUrl,
+    image_urls: req.imageUrls,
+    stage: req.stage,
+    max_frames: req.maxFrames ?? 90,
+  };
+
+  const [url, token] =
+    mode === "serverless"
+      ? [endpoint("run"), process.env.RUNPOD_API_KEY!]
+      : [podUrl("reconstruct"), process.env.RECON_KEY!];
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.RUNPOD_API_KEY}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      input: {
-        video_url: req.videoUrl,
-        image_urls: req.imageUrls,
-        stage: req.stage,
-        max_frames: req.maxFrames ?? 90,
-      },
-    }),
+    body: JSON.stringify({ input }),
   });
 
   if (!res.ok) {
-    throw new Error(`RunPod rejected the job (${res.status}): ${await res.text()}`);
+    throw new Error(`The reconstruction worker rejected the job (${res.status}): ${await res.text()}`);
   }
   const body = (await res.json()) as { id?: string; error?: string };
-  if (!body.id) throw new Error(body.error ?? "RunPod returned no job id");
-  return body.id;
+  if (!body.id) throw new Error(body.error ?? "The worker returned no job id.");
+  // Pod job ids are opaque hex; tagging them keeps polling unambiguous when a
+  // deployment switches modes with jobs already in flight.
+  return mode === "pod" ? `pod:${body.id}` : body.id;
 }
 
 type RunpodStatus = {
   status: "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED" | "TIMED_OUT";
   output?: unknown;
   error?: string;
+  /** Pod mode reports the running step outside `output`. */
+  step?: string;
+  detail?: string;
 };
 
 export async function pollRecon(jobId: string): Promise<ReconJob> {
   if (jobId.startsWith("demo-")) return simulate(jobId);
 
-  const res = await fetch(endpoint(`status/${jobId}`), {
-    headers: { Authorization: `Bearer ${process.env.RUNPOD_API_KEY}` },
+  const isPod = jobId.startsWith("pod:");
+  const id = isPod ? jobId.slice(4) : jobId;
+
+  const [url, token] = isPod
+    ? [podUrl(`jobs/${id}`), process.env.RECON_KEY!]
+    : [endpoint(`status/${id}`), process.env.RUNPOD_API_KEY!];
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error(`RunPod status check failed (${res.status})`);
+    throw new Error(`Status check failed (${res.status})`);
   }
   const body = (await res.json()) as RunpodStatus;
 
@@ -84,13 +116,15 @@ export async function pollRecon(jobId: string): Promise<ReconJob> {
     return { id: jobId, state: "queued", steps: stepsFrom(null) };
   }
   if (body.status === "IN_PROGRESS") {
-    // The worker publishes progress through runpod.serverless.progress_update,
-    // which arrives here as `output` while the job is still running.
-    const progress = body.output as { step?: string; detail?: string } | undefined;
+    // Serverless surfaces progress through `output` while the job runs;
+    // the pod reports it at the top level. Accept either.
+    const nested = body.output as { step?: string; detail?: string } | undefined;
+    const step = body.step ?? nested?.step;
+    const detail = body.detail ?? nested?.detail;
     return {
       id: jobId,
-      state: stateForStep(progress?.step),
-      steps: stepsFrom(progress?.step ?? null, progress?.detail),
+      state: stateForStep(step),
+      steps: stepsFrom(step ?? null, detail),
     };
   }
   if (body.status === "COMPLETED") {

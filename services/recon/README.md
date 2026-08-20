@@ -79,3 +79,26 @@ Copy the endpoint ID into the web app as `RUNPOD_ENDPOINT_ID`, with an account
 API key as `RUNPOD_API_KEY`.
 
 Updates do not deploy on push — RunPod rebuilds when you cut a **GitHub release**.
+
+## Running on a Pod instead
+
+A Pod is a rented machine billed by the hour, warm and always on, rather than a
+per-second endpoint that scales to zero. `app/server.py` serves the same
+`run_pipeline` over HTTP for that case.
+
+Start the pod from the **`colmap/colmap:latest`** image and expose TCP port
+8000, then on the pod:
+
+```bash
+export RECON_KEY=<shared secret>
+export BLOB_READ_WRITE_TOKEN=<from Vercel>
+curl -fsSL https://raw.githubusercontent.com/ArjunParadkar/HomeFAX-Final/main/services/recon/provision.sh | bash
+```
+
+Point the web app at it with `RECON_URL=https://<pod-id>-8000.proxy.runpod.net`
+and `RECON_KEY=<same secret>`. The app picks its transport automatically:
+RunPod serverless if `RUNPOD_ENDPOINT_ID` is set, otherwise the pod if
+`RECON_URL` is set, otherwise simulation.
+
+`GET /health` needs no auth and reports whether COLMAP, a GPU, Draco, and the
+Blob token are actually present — check it first when a stage fails.
