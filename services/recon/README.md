@@ -60,3 +60,22 @@ python tests/test_geometry.py
 
 It is the guard against the failure mode that matters most here — a scale or
 axis bug that produces a confident, wrong parts list.
+
+## Deploying to RunPod
+
+The Dockerfile lives at the repository root as `Dockerfile.recon`, so the build
+works whether RunPod sets the context to the repo root or to the Dockerfile's
+directory.
+
+1. RunPod console → Serverless → New Endpoint → **GitHub Repo**
+2. Repo `ArjunParadkar/HomeFAX-Final`, branch `main`, Dockerfile path
+   `Dockerfile.recon`
+3. GPU: 24 GB (A5000 / L4 / A10) is plenty. PatchMatch stereo is the memory
+   floor and it fits comfortably.
+4. Environment variable: `BLOB_READ_WRITE_TOKEN`
+5. Workers: min 0, max 1-2. Idle costs nothing; a stage costs a few cents.
+
+Copy the endpoint ID into the web app as `RUNPOD_ENDPOINT_ID`, with an account
+API key as `RUNPOD_API_KEY`.
+
+Updates do not deploy on push — RunPod rebuilds when you cut a **GitHub release**.

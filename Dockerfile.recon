@@ -1,3 +1,5 @@
+# Build context is the repository root, so this file lives here rather than
+# beside the worker source — RunPod's GitHub build sets context at the root.
 # COLMAP ships a CUDA-enabled image; building it from source takes ~40 minutes,
 # so we start from theirs and add the Python side on top.
 FROM colmap/colmap:latest
@@ -16,10 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 40 MB of mesh over LTE.
 RUN npm install -g @gltf-transform/cli@4
 
-COPY requirements.txt /tmp/requirements.txt
+COPY services/recon/requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --break-system-packages -r /tmp/requirements.txt
 
-COPY app /app
+COPY services/recon/app /app
 WORKDIR /app
 
 CMD ["python3", "-u", "handler.py"]

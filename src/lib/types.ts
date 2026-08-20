@@ -128,8 +128,12 @@ export type QualityReport = {
   grade: "A" | "B" | "C" | "D" | "F";
   dimensions: DimensionScore[];
   findings: Finding[];
-  /** Set when the report is geometry-only because vision analysis was unavailable. */
+  /** True only when the visual review produced a usable assessment. */
   visionAvailable: boolean;
+  /** Why the judged dimensions were or were not scored. */
+  visionStatus?: "graded" | "unavailable" | "stage_not_shown";
+  /** Shown to the contractor when the review could not be used. */
+  visionNote?: string;
 };
 
 export type PartCategory =

@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.data
+.vercel
+public
+src
+tests
+*.md
+.env*

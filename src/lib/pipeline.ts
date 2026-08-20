@@ -48,13 +48,32 @@ export async function advanceCapture(id: string): Promise<CaptureRow | null> {
 
   // Reconstruction landed. Grade it, take off the parts, and store everything.
   const stage = capture.stage as StageId;
+  // A simulated run returns no keyframes of its own, but the phone's frames are
+  // real and already stored — grade those rather than skipping the review.
+  const keyframeUrls =
+    job.result.keyframeUrls.length > 0 ? job.result.keyframeUrls : capture.frames;
+
   const vision = await analyzeStage({
     stage,
-    keyframeUrls: job.result.keyframeUrls,
+    keyframeUrls,
     geometry: job.result.geometry,
   });
 
-  const quality = buildQualityReport(job.result, stage, vision.findings, vision.available);
+  // A review that ran but found the wrong subject is not a pass — it is an
+  // unscored stage, and the record says which.
+  const status = !vision.available
+    ? "unavailable"
+    : vision.stageConfirmed
+      ? "graded"
+      : "stage_not_shown";
+  const note =
+    status === "unavailable"
+      ? vision.unavailableReason
+      : status === "stage_not_shown"
+        ? "The footage does not show this construction stage, so workmanship and compliance were not scored."
+        : undefined;
+
+  const quality = buildQualityReport(job.result, stage, vision.findings, { status, note });
   const geometryParts = takeoffFromGeometry(job.result, stage);
   // One list per stage: measured quantities plus anything the review counted.
   const parts = cumulativeParts([{ stage, parts: [...geometryParts, ...vision.parts] }]);

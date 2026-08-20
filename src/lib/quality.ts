@@ -249,8 +249,15 @@ export function buildQualityReport(
   recon: ReconResult,
   stage: StageId,
   visionFindings: Finding[],
-  visionAvailable: boolean,
+  vision: {
+    status: NonNullable<QualityReport["visionStatus"]>;
+    note?: string;
+  },
 ): QualityReport {
+  // Only a review that actually assessed this stage may score it. A review that
+  // ran but found the wrong subject would otherwise score a perfect 100 for
+  // workmanship, because there were no defects to deduct for.
+  const visionAvailable = vision.status === "graded";
   const def = stageDef(stage);
   const capture = scoreCapture(recon);
   const geometry = scoreGeometry(recon, stage);
@@ -278,7 +285,7 @@ export function buildQualityReport(
         ? `${findings.filter((f) => f.dimension === "workmanship").length} findings against ${
             def.checklist.length
           } checklist items`
-        : "not assessed — vision grader unavailable",
+        : "not assessed",
     },
     {
       dimension: "compliance",
@@ -288,7 +295,7 @@ export function buildQualityReport(
         ? `${findings.filter((f) => f.dimension === "compliance").length} findings against ${
             def.checklist.length
           } checklist items`
-        : "not assessed — vision grader unavailable",
+        : "not assessed",
     },
   ];
 
@@ -310,5 +317,7 @@ export function buildQualityReport(
     dimensions,
     findings,
     visionAvailable,
+    visionStatus: vision.status,
+    visionNote: vision.note,
   };
 }

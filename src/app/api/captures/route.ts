@@ -43,6 +43,7 @@ export async function POST(request: Request) {
     jobId,
     state: "queued",
     sourceUrl: body.videoUrl ?? body.imageUrls?.[0] ?? null,
+    frames: body.imageUrls ?? [],
   });
 
   return NextResponse.json({ id, jobId });

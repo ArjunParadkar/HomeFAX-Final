@@ -24,7 +24,8 @@ const SOURCE_LABEL: Record<Finding["source"], string> = {
 export default function QualityPanel({ report }: { report: QualityReport }) {
   const caption = report.visionAvailable
     ? `${report.findings.length} finding${report.findings.length === 1 ? "" : "s"} across ${report.dimensions.length} scored dimensions.`
-    : "Scored on measured geometry only — the visual review did not run, so workmanship and compliance are not included.";
+    : (report.visionNote ??
+      "Scored on measured geometry only — the visual review did not run, so workmanship and compliance are not included.");
 
   return (
     <section className="card overflow-hidden">

@@ -43,6 +43,7 @@ export const captures = homefax.table(
     jobId: text("job_id"),
     state: text("state").notNull().default("queued"),
     sourceUrl: text("source_url"),
+    frames: jsonb("frames").$type<string[]>().default([]),
     glbUrl: text("glb_url"),
     job: jsonb("job").$type<ReconJob>(),
     quality: jsonb("quality").$type<QualityReport>(),

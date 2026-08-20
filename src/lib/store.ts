@@ -34,6 +34,8 @@ export type CaptureRow = {
   jobId: string | null;
   state: string;
   sourceUrl: string | null;
+  /** The keyframes this capture was built from, in order. */
+  frames: string[];
   glbUrl: string | null;
   job: ReconJob | null;
   quality: QualityReport | null;
@@ -166,6 +168,7 @@ export async function upsertCapture(row: {
   jobId: string | null;
   state: string;
   sourceUrl: string | null;
+  frames: string[];
 }): Promise<CaptureRow> {
   const now = new Date().toISOString();
   const full: CaptureRow = {
@@ -201,6 +204,7 @@ export async function upsertCapture(row: {
     jobId: row.jobId,
     state: row.state,
     sourceUrl: row.sourceUrl,
+    frames: row.frames,
   });
   return full;
 }
@@ -248,6 +252,7 @@ function toCaptureRow(c: typeof schema.captures.$inferSelect): CaptureRow {
     jobId: c.jobId,
     state: c.state,
     sourceUrl: c.sourceUrl,
+    frames: c.frames ?? [],
     glbUrl: c.glbUrl,
     job: c.job,
     quality: c.quality,
