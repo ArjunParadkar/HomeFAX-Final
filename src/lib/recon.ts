@@ -65,17 +65,28 @@ export async function submitRecon(req: ReconRequest): Promise<string> {
       ? [endpoint("run"), process.env.RUNPOD_API_KEY!]
       : [podUrl("reconstruct"), process.env.RECON_KEY!];
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      // RunPod's HTTP proxy 403s requests with library-default user agents.
-      "User-Agent": "homefax/1.0",
-    },
-    body: JSON.stringify({ input }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        // RunPod's HTTP proxy 403s requests with library-default user agents.
+        "User-Agent": "homefax/1.0",
+      },
+      body: JSON.stringify({ input }),
+    });
+  } catch {
+    // The worker being down (stopped pod, exhausted account) must degrade to
+    // the labelled simulation, not error the contractor's upload. The record
+    // will say the geometry is simulated; refilming replaces it.
+    return `demo-${Date.now()}-${req.stage}`;
+  }
 
+  if (res.status >= 500 || res.status === 404) {
+    return `demo-${Date.now()}-${req.stage}`;
+  }
   if (!res.ok) {
     throw new Error(`The reconstruction worker rejected the job (${res.status}): ${await res.text()}`);
   }
