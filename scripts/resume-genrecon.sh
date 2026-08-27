@@ -5,7 +5,12 @@
 #
 # It refuses to start until the RunPod balance is positive, then:
 #   1. restarts the GenRecon pod (its 100 GB volume resumes provisioning
-#      from the stage markers — nothing already done is redone)
+#      from the stage markers — nothing already done is redone). If RunPod
+#      has reclaimed the pod — it does that after days at a negative balance,
+#      and it took pod k4seektj9t0sn7 and its volume by 2026-08-26 — a fresh
+#      RTX 4090 pod is created from scratch and its id written back to
+#      .env.local. A cold provision (conda env, CUDA builds, 13.7 GB of
+#      checkpoints) takes ~1 h, so fund at least ~$5.
 #   2. follows the provisioning log streamed to Blob until the worker
 #      reports genrecon:true (or surfaces the first real error and stops)
 #   3. runs a 40-frame test reconstruction and reports the measured timing
@@ -38,19 +43,59 @@ BAL=$(curl -s --max-time 30 "https://api.runpod.io/graphql?api_key=$RP" \
 echo "balance: \$$BAL"
 python3 -c "import sys; sys.exit(0 if float('$BAL') > 0.5 else 1)" || {
   echo "Balance is \$$BAL — add funds at https://console.runpod.io/user/billing first."
+  echo "(a fresh pod needs ~1 h of provisioning at \$0.74/hr — fund at least ~\$5)"
   exit 1
 }
 
-say "restarting pod $POD"
-CODE=$(curl -s --max-time 120 -o /dev/null -w "%{http_code}" -X POST \
-  -H "Authorization: Bearer $RP" "https://rest.runpod.io/v1/pods/$POD/restart")
-if [ "$CODE" != "200" ]; then
-  # A stopped pod sometimes needs start rather than restart.
+say "checking pod $POD"
+EXISTS=$(curl -s --max-time 30 -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer $RP" "https://rest.runpod.io/v1/pods/$POD")
+if [ "$EXISTS" = "200" ]; then
+  say "restarting pod $POD"
   CODE=$(curl -s --max-time 120 -o /dev/null -w "%{http_code}" -X POST \
-    -H "Authorization: Bearer $RP" "https://rest.runpod.io/v1/pods/$POD/start")
+    -H "Authorization: Bearer $RP" "https://rest.runpod.io/v1/pods/$POD/restart")
+  if [ "$CODE" != "200" ]; then
+    # A stopped pod sometimes needs start rather than restart.
+    CODE=$(curl -s --max-time 120 -o /dev/null -w "%{http_code}" -X POST \
+      -H "Authorization: Bearer $RP" "https://rest.runpod.io/v1/pods/$POD/start")
+  fi
+  echo "start/restart: HTTP $CODE"
+  [ "$CODE" = "200" ] || { echo "Pod would not start — check the console."; exit 1; }
+else
+  say "pod $POD is gone (HTTP $EXISTS) — creating a fresh GenRecon pod"
+  # The colmap image has no curl/git; the start command installs git, clones
+  # the app, and hands off to provision-genrecon.sh, which owns everything
+  # else (and streams its log to Blob). /workspace is the persistent volume.
+  START_CMD='export DEBIAN_FRONTEND=noninteractive; apt-get update -qq; apt-get install -y -qq --no-install-recommends git ca-certificates; rm -rf /opt/homefax; git clone -q --depth 1 -b main https://github.com/ArjunParadkar/HomeFAX-Final.git /opt/homefax; export HOMEFAX_FOREGROUND=1; exec bash /opt/homefax/services/recon/provision-genrecon.sh'
+  BODY=$(START_CMD="$START_CMD" RECON_KEY="$KEY" python3 -c '
+import json, os
+print(json.dumps({
+  "name": "homefax-genrecon",
+  "imageName": "colmap/colmap:latest",
+  "cloudType": "SECURE",
+  "gpuTypeIds": ["NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 3090"],
+  "gpuTypePriority": "custom",
+  "gpuCount": 1,
+  "containerDiskInGb": 40,
+  "volumeInGb": 100,
+  "volumeMountPath": "/workspace",
+  "ports": ["8000/http"],
+  "env": {"RECON_KEY": os.environ["RECON_KEY"],
+          "BLOB_READ_WRITE_TOKEN": os.environ.get("BLOB_READ_WRITE_TOKEN", ""),
+          "HOMEFAX_FOREGROUND": "1"},
+  "dockerStartCmd": ["bash", "-c", os.environ["START_CMD"]],
+}))')
+  RESP=$(curl -s --max-time 120 -X POST -H "Authorization: Bearer $RP" \
+    -H "Content-Type: application/json" "https://rest.runpod.io/v1/pods" -d "$BODY")
+  NEWPOD=$(printf '%s' "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
+  [ -n "$NEWPOD" ] || { echo "Pod creation failed: $RESP"; exit 1; }
+  echo "created pod $NEWPOD: $(printf '%s' "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print((d.get('machine') or {}).get('gpuTypeId') or d.get('gpuTypeId') or '?', d.get('costPerHr','?'), '\$/hr')" 2>/dev/null)"
+  POD="$NEWPOD"; BASE="https://$POD-8000.proxy.runpod.net"
+  # Persist so the next run (and the stop command) target the new pod.
+  sed -i "s|^HOMEFAX_POD_ID=.*|HOMEFAX_POD_ID=$POD|; s|^RECON_URL=.*|RECON_URL=$BASE|" .env.local
+  grep -q '^HOMEFAX_POD_ID=' .env.local || echo "HOMEFAX_POD_ID=$POD" >> .env.local
+  echo "wrote HOMEFAX_POD_ID/RECON_URL to .env.local"
 fi
-echo "start/restart: HTTP $CODE"
-[ "$CODE" = "200" ] || { echo "Pod would not start — check the console."; exit 1; }
 
 say "waiting for the GenRecon worker (provisioning resumes from markers)"
 DEADLINE=$(( $(date +%s) + 5400 ))
