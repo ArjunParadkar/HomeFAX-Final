@@ -29,7 +29,7 @@ export default function SplashLoader({
       } flex flex-col items-center justify-center overflow-hidden ${className}`}
       style={{ background: "var(--onyx, #16130f)" }}
     >
-      <LogoMark mode="loop" surface="dark" size={markSize} />
+      <LogoMark variant="house" mode="loop" surface="dark" size={markSize} />
       <div className="mt-2" style={{ color: "var(--cream, #f4eddf)" }}>
         <Wordmark size={26} tracking={0.34} accent="var(--claude, #d97757)" />
       </div>

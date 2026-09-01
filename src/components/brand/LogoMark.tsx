@@ -3,11 +3,14 @@
 import { useEffect, useRef } from "react";
 
 /**
- * The HomeFAX mark — the 3D house draw-in animation from the brand kit
- * (public/brand/homefax-logo.mp4, 500x500, black lines on white).
+ * The HomeFAX mark, from the brand kit (500x500 videos, black lines on white).
+ *
+ * variant "logo" is the boxed AR monogram draw-in (homefax-logo.mp4);
+ * "house" is the 3D house draw-in (homefax-house.mp4) used by the splash.
  *
  * mode "loop" replays the draw-in, cut just before the tail hold so it never
- * sits still; "still" seeks to the finished mark and holds it.
+ * sits still; "once" plays the draw-in through and holds the finished mark;
+ * "still" seeks straight to the finished mark and holds it.
  *
  * surface "dark" is the kit's cream-on-onyx technique: the whole element
  * screen-blends onto the dark panel behind it, the video is inverted, and a
@@ -16,13 +19,20 @@ import { useEffect, useRef } from "react";
  */
 const LOOP_CAP_S = 3.4;
 
+const SOURCES = {
+  logo: { src: "/brand/homefax-logo.mp4", poster: "/brand/homefax-logo-still.png" },
+  house: { src: "/brand/homefax-house.mp4", poster: "/brand/homefax-house.png" },
+};
+
 export default function LogoMark({
+  variant = "house",
   mode = "still",
   surface = "dark",
   size = 96,
   className = "",
 }: {
-  mode?: "loop" | "still";
+  variant?: "logo" | "house";
+  mode?: "loop" | "once" | "still";
   surface?: "dark" | "light";
   size?: number | string;
   className?: string;
@@ -60,14 +70,20 @@ export default function LogoMark({
       return () => v.removeEventListener("timeupdate", onTime);
     }
 
+    if (mode === "once" && !reduced) {
+      v.loop = false;
+      v.play().catch(still);
+      return;
+    }
+
     still();
   }, [mode]);
 
   const video = (
     <video
       ref={ref}
-      src="/brand/homefax-logo.mp4"
-      poster="/brand/homefax-mark.png"
+      src={SOURCES[variant].src}
+      poster={SOURCES[variant].poster}
       muted
       playsInline
       preload="auto"

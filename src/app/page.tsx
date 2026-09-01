@@ -8,9 +8,8 @@ import { currentUser } from "@/lib/accounts";
 import { STAGES } from "@/lib/stages";
 
 /**
- * The front of the record. The mark sits on the onyx placard as the finished
- * house — the drawing is done, which is the whole promise — then the record's
- * own terms on paper, then the way in.
+ * The front of the record. The boxed AR logo draws itself in once on the onyx
+ * placard and holds, then the record's own terms on paper, then the way in.
  *
  * Sign in and create account are two links, not two client states: the page
  * stays a server component and the browser back button walks the tabs.
@@ -45,7 +44,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
     <main className="shell flex flex-1 flex-col py-8">
       <section className="plate overflow-hidden">
         <div className="flex flex-col items-center px-5 pb-6 pt-7">
-          <LogoMark mode="still" surface="dark" size={140} />
+          <LogoMark variant="logo" mode="once" surface="dark" size={140} />
           <h1 className="mt-1">
             <Wordmark size={25} tracking={0.34} accent="var(--claude)" />
           </h1>
