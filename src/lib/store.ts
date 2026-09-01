@@ -23,7 +23,10 @@ export type RecordRow = {
   address: string;
   owner: string | null;
   contractor: string | null;
-  keyId: string;
+  /** Legacy key id — null for all records created after the accounts launch. */
+  keyId: string | null;
+  /** The company that owns this record — the tenant boundary. */
+  orgId: string | null;
   createdAt: string;
 };
 
@@ -50,42 +53,98 @@ export const storeBackend = dbConfigured ? "postgres" : "file";
 
 /* ----------------------------- file backend ----------------------------- */
 
-const FILE = path.join(process.cwd(), ".data", "store.json");
+/**
+ * Resolved lazily so test runners can chdir() to a temp directory before the
+ * first call and have reads/writes land there.
+ */
+export function getDataFile(): string {
+  return path.join(process.cwd(), ".data", "store.json");
+}
 
-type FileShape = { records: RecordRow[]; captures: CaptureRow[] };
+/** Minimal project-access shape needed for the record-list union. */
+type ProjectAccessRef = { id: string; recordId: string; orgId: string; role: string };
+
+type FileShape = {
+  records: RecordRow[];
+  captures: CaptureRow[];
+  /** Preserved opaquely; owned and written by accounts.ts. */
+  projectAccess?: ProjectAccessRef[];
+  users?: unknown[];
+  orgs?: unknown[];
+  memberships?: unknown[];
+  assignments?: unknown[];
+  hires?: unknown[];
+};
 
 async function readFile(): Promise<FileShape> {
+  const file = getDataFile();
   try {
-    const raw = await fs.readFile(FILE, "utf8");
+    const raw = await fs.readFile(file, "utf8");
     const parsed = JSON.parse(raw) as Partial<FileShape>;
-    return { records: parsed.records ?? [], captures: parsed.captures ?? [] };
+    return {
+      records: (parsed.records ?? []) as RecordRow[],
+      captures: (parsed.captures ?? []) as CaptureRow[],
+      projectAccess: parsed.projectAccess,
+      users: parsed.users,
+      orgs: parsed.orgs,
+      memberships: parsed.memberships,
+      assignments: parsed.assignments,
+      hires: parsed.hires,
+    };
   } catch {
     return { records: [], captures: [] };
   }
 }
 
 async function writeFile(data: FileShape): Promise<void> {
-  await fs.mkdir(path.dirname(FILE), { recursive: true });
+  const file = getDataFile();
+  await fs.mkdir(path.dirname(file), { recursive: true });
   // Write-then-rename so a crash mid-write cannot truncate the store.
-  const tmp = `${FILE}.${process.pid}.tmp`;
+  const tmp = `${file}.${process.pid}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.rename(tmp, FILE);
+  await fs.rename(tmp, file);
 }
 
 /* ------------------------------ public API ------------------------------ */
 
-export async function listRecords(keyId: string): Promise<RecordRow[]> {
+/**
+ * All records accessible to an org: records it owns (orgId match) plus
+ * records it has been granted project access to.
+ */
+export async function listRecordsForOrg(orgId: string): Promise<RecordRow[]> {
   if (storeBackend === "file") {
     const d = await readFile();
+    const paIds = new Set(
+      (d.projectAccess ?? []).filter((pa) => pa.orgId === orgId).map((pa) => pa.recordId),
+    );
     return d.records
-      .filter((r) => r.keyId === keyId)
+      .filter((r) => r.orgId === orgId || paIds.has(r.id))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   const db = getDb();
-  const rows = await db.select().from(schema.records).where(eq(schema.records.keyId, keyId));
-  return rows
-    .map(toRecordRow)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const owned = await db
+    .select()
+    .from(schema.records)
+    .where(eq(schema.records.orgId, orgId));
+  const via = await db
+    .select({ record: schema.records })
+    .from(schema.records)
+    .innerJoin(
+      schema.projectAccess,
+      and(
+        eq(schema.projectAccess.recordId, schema.records.id),
+        eq(schema.projectAccess.orgId, orgId),
+      ),
+    );
+  const seen = new Set<string>();
+  const all: (typeof schema.records.$inferSelect)[] = [];
+  for (const row of [...owned, ...via.map((v) => v.record)]) {
+    if (!seen.has(row.id)) {
+      seen.add(row.id);
+      all.push(row);
+    }
+  }
+  return all.map(toRecordRow).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function createRecord(input: {
@@ -94,7 +153,10 @@ export async function createRecord(input: {
   address: string;
   owner?: string;
   contractor?: string;
-  keyId: string;
+  /** Legacy key — omit for new org-owned records. */
+  keyId?: string;
+  /** The owning org. */
+  orgId?: string;
 }): Promise<RecordRow> {
   const row: RecordRow = {
     id: input.id,
@@ -102,7 +164,8 @@ export async function createRecord(input: {
     address: input.address,
     owner: input.owner ?? null,
     contractor: input.contractor ?? null,
-    keyId: input.keyId,
+    keyId: input.keyId ?? null,
+    orgId: input.orgId ?? null,
     createdAt: new Date().toISOString(),
   };
   if (storeBackend === "file") {
@@ -119,20 +182,37 @@ export async function createRecord(input: {
     owner: row.owner,
     contractor: row.contractor,
     keyId: row.keyId,
+    orgId: row.orgId,
   });
   return row;
 }
 
-export async function getRecord(slug: string, keyId: string): Promise<RecordRow | null> {
+/** Look up a record by slug. Callers are responsible for access checks. */
+export async function getRecordBySlug(slug: string): Promise<RecordRow | null> {
   if (storeBackend === "file") {
     const d = await readFile();
-    return d.records.find((r) => r.slug === slug && r.keyId === keyId) ?? null;
+    return d.records.find((r) => r.slug === slug) ?? null;
   }
   const db = getDb();
   const rows = await db
     .select()
     .from(schema.records)
-    .where(and(eq(schema.records.slug, slug), eq(schema.records.keyId, keyId)))
+    .where(eq(schema.records.slug, slug))
+    .limit(1);
+  return rows[0] ? toRecordRow(rows[0]) : null;
+}
+
+/** Look up a record by id. Callers are responsible for access checks. */
+export async function getRecordById(id: string): Promise<RecordRow | null> {
+  if (storeBackend === "file") {
+    const d = await readFile();
+    return d.records.find((r) => r.id === id) ?? null;
+  }
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.records)
+    .where(eq(schema.records.id, id))
     .limit(1);
   return rows[0] ? toRecordRow(rows[0]) : null;
 }
@@ -240,6 +320,7 @@ function toRecordRow(r: typeof schema.records.$inferSelect): RecordRow {
     owner: r.owner,
     contractor: r.contractor,
     keyId: r.keyId,
+    orgId: r.orgId,
     createdAt: r.createdAt.toISOString(),
   };
 }

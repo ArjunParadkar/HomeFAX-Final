@@ -1,12 +1,25 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import ErrorLine from "@/components/ErrorLine";
 import PartsTable from "@/components/PartsTable";
 import { GradeChip } from "@/components/Grade";
-import { currentKey } from "@/lib/auth";
+import {
+  addCompanyByKeyAction,
+  assignAction,
+  setAssignmentStatusAction,
+} from "@/app/account/actions";
+import {
+  activeOrg,
+  canAccessRecord,
+  currentUser,
+  listAssignmentsForRecord,
+  listMembers,
+  listProjectOrgs,
+} from "@/lib/accounts";
 import { cumulativeParts } from "@/lib/parts";
-import { STAGES } from "@/lib/stages";
-import { getRecord, listCaptures } from "@/lib/store";
+import { STAGES, stageDef } from "@/lib/stages";
+import { getRecordBySlug, listCaptures } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +32,22 @@ const IN_FLIGHT = new Set([
   "analyzing",
 ]);
 
-export default async function RecordPage({ params }: PageProps<"/records/[slug]">) {
-  const key = await currentKey();
-  if (!key) redirect("/");
+const ROLE_WORD: Record<"owner" | "collaborator", string> = {
+  owner: "Owner",
+  collaborator: "Collaborator",
+};
+
+export default async function RecordPage({ params, searchParams }: PageProps<"/records/[slug]">) {
+  const user = await currentUser();
+  if (!user) redirect("/");
 
   const { slug } = await params;
-  const record = await getRecord(slug, key.id);
+  const sp = await searchParams;
+  const record = await getRecordBySlug(slug);
   if (!record) notFound();
+  if (!(await canAccessRecord(user.id, record.id))) redirect("/records");
+
+  const org = await activeOrg(user.id);
 
   const captures = await listCaptures(record.id);
   const byStage = new Map(captures.map((c) => [c.stage, c]));
@@ -49,6 +71,24 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
       .map((c) => ({ stage: c.stage, parts: c.parts })),
   );
 
+  // The parties on this record, and who work can be handed to: the reader's
+  // own crew by name, or any company already on the project.
+  const team = await listProjectOrgs(record.id);
+  const members = org ? await listMembers(org.id) : [];
+  const assignments = await listAssignmentsForRecord(record.id);
+
+  const memberNames = new Map(members.map((m) => [m.user.id, m.user.name]));
+  const teamNames = new Map(team.map((t) => [t.org.id, t.org.name]));
+
+  const readerId = user.id;
+  function assigneeName(userId: string | null, orgId: string | null): string {
+    if (userId) return userId === readerId ? "You" : (memberNames.get(userId) ?? "A person");
+    if (orgId) return teamNames.get(orgId) ?? "A company";
+    return "Unassigned";
+  }
+
+  const canAssign = members.length > 0 || team.length > 0;
+
   return (
     <>
       <AppHeader
@@ -60,6 +100,8 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
       />
 
       <main className="shell flex-1 space-y-6 py-5">
+        <ErrorLine message={sp.error} />
+
         <section className="card overflow-hidden">
           <dl className="rule-grid grid-cols-2 border-t-0">
             <div className="field">
@@ -78,7 +120,7 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
             </div>
             <div className="field">
               <dt>Filed by</dt>
-              <dd className="truncate">{record.contractor ?? key.label}</dd>
+              <dd className="truncate">{record.contractor ?? org?.name ?? "—"}</dd>
             </div>
           </dl>
         </section>
@@ -139,6 +181,162 @@ export default async function RecordPage({ params }: PageProps<"/records/[slug]"
               );
             })}
           </ol>
+        </section>
+
+        <section className="card overflow-hidden">
+          <div className="border-b border-[var(--line)] px-4 py-3">
+            <h2 className="eyebrow">Project team</h2>
+          </div>
+
+          {team.length === 0 ? (
+            <p className="label px-4 pt-3.5">No companies on this project</p>
+          ) : (
+            <ul>
+              {team.map(({ access, org: member }) => (
+                <li
+                  key={access.id}
+                  className="flex items-center gap-3 border-b border-[var(--line)] px-4 py-3"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[0.9375rem] font-medium leading-snug">
+                      {member.name}
+                    </span>
+                    {member.headline && (
+                      <span className="mt-0.5 block truncate text-[0.75rem] text-[var(--ink-3)]">
+                        {member.headline}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`chip shrink-0 ${access.role === "owner" ? "chip-accent" : ""}`}
+                  >
+                    {ROLE_WORD[access.role]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <form action={addCompanyByKeyAction} className="space-y-3.5 px-4 py-4">
+            <input type="hidden" name="recordId" value={record.id} />
+            <div>
+              <label className="label block" htmlFor="hfxKey">
+                Add a company by HomeFAX key
+              </label>
+              <input
+                id="hfxKey"
+                name="hfxKey"
+                required
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="hfx_…"
+                className="input tnum mt-1.5"
+              />
+              <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+                Ask the sub for the key on their Team page. They get to open this record and film
+                the stages you hand them.
+              </p>
+            </div>
+            <button type="submit" className="btn btn-secondary w-full">
+              Add company
+            </button>
+          </form>
+        </section>
+
+        <section className="card overflow-hidden">
+          <div className="border-b border-[var(--line)] px-4 py-3">
+            <h2 className="eyebrow">Assignments</h2>
+          </div>
+
+          {assignments.length === 0 ? (
+            <p className="label px-4 pt-3.5">Nothing assigned on this property</p>
+          ) : (
+            <ul>
+              {assignments.map((a) => (
+                <li key={a.id} className="border-b border-[var(--line)] px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <p className="min-w-0 flex-1 text-[0.9375rem] font-medium leading-snug">
+                      {a.task}
+                    </p>
+                    <span className={`chip shrink-0 ${a.status === "open" ? "chip-accent" : ""}`}>
+                      {a.status === "open" ? "Open" : "Done"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="chip">{assigneeName(a.assigneeUserId, a.assigneeOrgId)}</span>
+                    {a.stage && <span className="chip">{stageDef(a.stage).short}</span>}
+                  </div>
+
+                  <form action={setAssignmentStatusAction} className="mt-2.5">
+                    <input type="hidden" name="assignmentId" value={a.id} />
+                    <input type="hidden" name="status" value={a.status === "open" ? "done" : "open"} />
+                    <button type="submit" className="chip min-h-[2.75rem] px-3">
+                      {a.status === "open" ? "Mark done" : "Reopen"}
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {canAssign ? (
+            <form action={assignAction} className="space-y-3.5 px-4 py-4">
+              <input type="hidden" name="recordId" value={record.id} />
+              <div>
+                <label className="label block" htmlFor="assignee">
+                  Hand it to
+                </label>
+                <select id="assignee" name="assignee" required className="input mt-1.5">
+                  {members.map((m) => (
+                    <option key={m.user.id} value={`u:${m.user.id}`}>
+                      {m.user.name}
+                      {m.membership.title ? ` · ${m.membership.title}` : ""}
+                    </option>
+                  ))}
+                  {team.map((t) => (
+                    <option key={t.org.id} value={`o:${t.org.id}`}>
+                      {t.org.name} (company)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="label block" htmlFor="task">
+                  The work
+                </label>
+                <input
+                  id="task"
+                  name="task"
+                  required
+                  placeholder="Film the rough electrical before drywall"
+                  className="input mt-1.5"
+                />
+              </div>
+              <div>
+                <label className="label block" htmlFor="stage">
+                  Stage <span className="normal-case tracking-normal">(optional)</span>
+                </label>
+                <select id="stage" name="stage" defaultValue="" className="input mt-1.5">
+                  <option value="">Not stage-specific</option>
+                  {STAGES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button type="submit" className="btn btn-primary w-full">
+                Assign work
+              </button>
+            </form>
+          ) : (
+            <p className="px-4 py-4 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
+              Work goes to a person on your crew or a company on the project. Add members on Team,
+              or add a company by its HomeFAX key above.
+            </p>
+          )}
         </section>
 
         {rollup.length > 0 && (

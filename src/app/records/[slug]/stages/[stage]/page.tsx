@@ -4,11 +4,11 @@ import AppHeader from "@/components/AppHeader";
 import CaptureFlow from "@/components/CaptureFlow";
 import PartsTable from "@/components/PartsTable";
 import QualityPanel from "@/components/QualityPanel";
-import { currentKey } from "@/lib/auth";
+import { canAccessRecord, currentUser } from "@/lib/accounts";
 import { reconConfigured } from "@/lib/recon";
 import { STAGES, isStageId, stageDef, stageIndex } from "@/lib/stages";
 import { blobConfigured } from "@/lib/storage";
-import { getRecord, listCaptures } from "@/lib/store";
+import { getRecordBySlug, listCaptures } from "@/lib/store";
 import type { ReconMetrics, SceneGeometry } from "@/lib/types";
 
 const ModelViewer = dynamicImport(() => import("@/components/ModelViewer"));
@@ -31,14 +31,15 @@ const SCALE_SOURCE: Record<ReconMetrics["scaleSource"], string> = {
 };
 
 export default async function StagePage({ params }: PageProps<"/records/[slug]/stages/[stage]">) {
-  const key = await currentKey();
-  if (!key) redirect("/");
+  const user = await currentUser();
+  if (!user) redirect("/");
 
   const { slug, stage } = await params;
   if (!isStageId(stage)) notFound();
 
-  const record = await getRecord(slug, key.id);
+  const record = await getRecordBySlug(slug);
   if (!record) notFound();
+  if (!(await canAccessRecord(user.id, record.id))) redirect("/records");
 
   const def = stageDef(stage);
   const position = stageIndex(stage) + 1;

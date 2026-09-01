@@ -1,15 +1,22 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
-import KeyGate from "@/components/KeyGate";
+import ErrorLine from "@/components/ErrorLine";
 import LogoMark from "@/components/brand/LogoMark";
 import Wordmark from "@/components/brand/Wordmark";
-import { authConfigured, currentKey } from "@/lib/auth";
+import { signInAction, signUpAction } from "@/app/account/actions";
+import { currentUser } from "@/lib/accounts";
 import { STAGES } from "@/lib/stages";
 
 /**
- * The gate. Onyx placard on top — the instrument — then the record's own terms
- * set on paper, then the key. Nothing here sells; it states what the record is
- * and what it costs the reader to make one.
+ * The front of the record. The mark sits on the onyx placard as the finished
+ * house — the drawing is done, which is the whole promise — then the record's
+ * own terms on paper, then the way in.
+ *
+ * Sign in and create account are two links, not two client states: the page
+ * stays a server component and the browser back button walks the tabs.
  */
+
+export const dynamic = "force-dynamic";
 
 const WHERE_THE_WORK_HAPPENS = [
   {
@@ -26,15 +33,19 @@ const WHERE_THE_WORK_HAPPENS = [
   },
 ];
 
-export default async function Home() {
-  const key = await currentKey();
-  if (key) redirect("/records");
+export default async function Home({ searchParams }: PageProps<"/">) {
+  const user = await currentUser();
+  if (user) redirect("/records");
+
+  const sp = await searchParams;
+  const raw = Array.isArray(sp.mode) ? sp.mode[0] : sp.mode;
+  const mode = raw === "signup" ? "signup" : "signin";
 
   return (
     <main className="shell flex flex-1 flex-col py-8">
       <section className="plate overflow-hidden">
         <div className="flex flex-col items-center px-5 pb-6 pt-7">
-          <LogoMark mode="loop" surface="dark" size={168} />
+          <LogoMark mode="still" surface="dark" size={140} />
           <h1 className="mt-1">
             <Wordmark size={25} tracking={0.34} accent="var(--claude)" />
           </h1>
@@ -60,6 +71,141 @@ export default async function Home() {
             <dd>For life</dd>
           </div>
         </dl>
+      </section>
+
+      <section className="plate mt-7 overflow-hidden">
+        <div className="flex border-b border-[var(--line)]">
+          <Tab href="/?mode=signin" label="Sign in" active={mode === "signin"} />
+          <Tab href="/?mode=signup" label="Create account" active={mode === "signup"} />
+        </div>
+
+        <div className="px-5 py-5">
+          {mode === "signin" ? (
+            <form action={signInAction} className="space-y-4">
+              <div>
+                <label className="label block" htmlFor="signin-email">
+                  Email
+                </label>
+                <input
+                  id="signin-email"
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@crew.build"
+                  className="input mt-1.5"
+                />
+              </div>
+              <div>
+                <label className="label block" htmlFor="signin-password">
+                  Password
+                </label>
+                <input
+                  id="signin-password"
+                  name="password"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  className="input mt-1.5"
+                />
+              </div>
+              <ErrorLine message={sp.error} />
+              <button type="submit" className="btn btn-primary w-full">
+                Sign in
+              </button>
+            </form>
+          ) : (
+            <form action={signUpAction} className="space-y-4">
+              <div>
+                <label className="label block" htmlFor="signup-name">
+                  Your name
+                </label>
+                <input
+                  id="signup-name"
+                  name="name"
+                  required
+                  autoComplete="name"
+                  placeholder="Dana Reyes"
+                  className="input mt-1.5"
+                />
+              </div>
+              <div>
+                <label className="label block" htmlFor="signup-email">
+                  Email
+                </label>
+                <input
+                  id="signup-email"
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@crew.build"
+                  className="input mt-1.5"
+                />
+              </div>
+              <div>
+                <label className="label block" htmlFor="signup-password">
+                  Password
+                </label>
+                <input
+                  id="signup-password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  className="input mt-1.5"
+                />
+                <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+                  Eight characters or more.
+                </p>
+              </div>
+              <div>
+                <label className="label block" htmlFor="signup-handle">
+                  Handle <span className="normal-case tracking-normal">(optional)</span>
+                </label>
+                <input
+                  id="signup-handle"
+                  name="handle"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="dreyes"
+                  className="input tnum mt-1.5"
+                />
+                <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+                  How crews find you on the hire board. Taken from your name if you leave it blank.
+                </p>
+              </div>
+              <div>
+                <label className="label block" htmlFor="signup-headline">
+                  Your trade <span className="normal-case tracking-normal">(optional)</span>
+                </label>
+                <input
+                  id="signup-headline"
+                  name="headline"
+                  placeholder="Framing lead, 12 years"
+                  className="input mt-1.5"
+                />
+              </div>
+              <ErrorLine message={sp.error} />
+              <button type="submit" className="btn btn-primary w-full">
+                Create account
+              </button>
+            </form>
+          )}
+        </div>
+
+        <p className="border-t border-[var(--line)] px-5 py-3 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+          One account per person. Records are filed to a company — register yours once you are in,
+          or hand your HomeFAX key to the builder who is already on the job.
+        </p>
       </section>
 
       <p className="mt-7 text-[1.0625rem] leading-relaxed text-[var(--ink-2)]">
@@ -91,28 +237,24 @@ export default async function Home() {
         </p>
       </section>
 
-      <section className="plate mt-7 overflow-hidden">
-        <div className="border-b border-[var(--line)] px-5 py-3">
-          <h2 className="eyebrow">Contractor access</h2>
-        </div>
-        <div className="px-5 py-5">
-          {authConfigured() ? (
-            <KeyGate />
-          ) : (
-            <div className="space-y-2">
-              <h3 className="text-[0.9375rem] font-semibold">No keys are set on this deployment</h3>
-              <p className="text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
-                Set <code className="tnum text-[var(--accent)]">ACCESS_KEYS</code> to a
-                comma-separated list of{" "}
-                <code className="tnum text-[var(--accent)]">secret:Label</code> pairs, then reload
-                this page.
-              </p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <p className="eyebrow mt-6 text-center">Contractor edition · access by key only</p>
+      <p className="eyebrow mt-7 text-center">Contractor edition · kept for the life of the house</p>
     </main>
+  );
+}
+
+function Tab({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className="label flex min-h-[2.75rem] flex-1 items-center justify-center border-b-2 px-2 text-center text-[0.6875rem]"
+      style={{
+        borderColor: active ? "var(--accent)" : "transparent",
+        color: active ? "var(--accent)" : "var(--ink-3)",
+        marginBottom: "-1px",
+      }}
+    >
+      {label}
+    </Link>
   );
 }

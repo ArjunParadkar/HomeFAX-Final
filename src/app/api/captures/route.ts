@@ -1,27 +1,41 @@
 import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
-import { currentKey } from "@/lib/auth";
+import { canAccessRecord, currentUser } from "@/lib/accounts";
 import { submitRecon } from "@/lib/recon";
 import { isStageId } from "@/lib/stages";
-import { getRecord, upsertCapture } from "@/lib/store";
+import { getRecordBySlug, upsertCapture } from "@/lib/store";
 
 export async function POST(request: Request) {
-  const key = await currentKey();
-  if (!key) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await currentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as {
+    recordId?: string;
     slug?: string;
     stage?: string;
     imageUrls?: string[];
     videoUrl?: string;
   };
 
-  if (!body.slug || !body.stage || !isStageId(body.stage)) {
-    return NextResponse.json({ error: "A record slug and a valid stage are required." }, { status: 400 });
+  if (!body.stage || !isStageId(body.stage)) {
+    return NextResponse.json({ error: "A valid stage is required." }, { status: 400 });
   }
 
-  const record = await getRecord(body.slug, key.id);
-  if (!record) return NextResponse.json({ error: "Record not found." }, { status: 404 });
+  // Support both recordId and legacy slug lookup
+  let record: Awaited<ReturnType<typeof getRecordBySlug>> = null;
+  if (body.recordId) {
+    const { getRecordById } = await import("@/lib/store");
+    record = await getRecordById(body.recordId);
+  } else if (body.slug) {
+    record = await getRecordBySlug(body.slug);
+  }
+
+  if (!record) {
+    return NextResponse.json({ error: "Record not found." }, { status: 404 });
+  }
+
+  const hasAccess = await canAccessRecord(user.id, record.id);
+  if (!hasAccess) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
   let jobId: string;
   try {
