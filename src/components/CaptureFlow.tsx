@@ -3,6 +3,7 @@
 import { upload } from "@vercel/blob/client";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import SplashLoader from "@/components/brand/SplashLoader";
 import { extractFrames } from "@/lib/frames";
 import type { JobStep, StageId } from "@/lib/types";
 
@@ -150,51 +151,76 @@ export default function CaptureFlow({
     return <Working steps={phase.steps} simulated={!reconEnabled} />;
   }
 
+  if (phase.kind === "extracting" || phase.kind === "uploading") {
+    const reading = phase.kind === "extracting";
+    const pct = Math.round((phase.done / Math.max(1, phase.total)) * 100);
+    return (
+      <section className="plate overflow-hidden" aria-busy>
+        <SplashLoader
+          caption={reading ? "READING THE WALK" : "SENDING FRAMES"}
+          markSize={116}
+          className="py-7!"
+        />
+        <div className="border-t border-[var(--line)] px-5 py-4">
+          <p className="text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
+            {reading
+              ? "Scoring every frame for sharpness and keeping the best of each pass."
+              : "Only the selected frames upload. The video stays on your phone."}
+          </p>
+          <div
+            className="mt-3 h-[3px] overflow-hidden rounded-[1px] bg-[var(--surface-2)]"
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={reading ? "Reading the walk" : "Sending frames"}
+          >
+            <div
+              className="h-full bg-[var(--accent)] transition-[width] duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="tnum mt-2 text-[0.625rem] uppercase tracking-[0.14em] text-[var(--ink-3)]">
+            {phase.done} / {phase.total} frames
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {phase.kind === "error" && (
-        <div className="card border-[var(--grade-f)] p-4">
-          <p className="text-sm font-semibold text-[var(--grade-f)]">That did not go through</p>
-          <p className="mt-1 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
+        <div className="card p-4" style={{ borderColor: "var(--grade-f)" }}>
+          <p className="eyebrow" style={{ color: "var(--grade-f)" }}>
+            That did not go through
+          </p>
+          <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
             {phase.message}
           </p>
         </div>
       )}
 
-      {(phase.kind === "extracting" || phase.kind === "uploading") && (
-        <div className="card p-5">
-          <p className="text-sm font-semibold">
-            {phase.kind === "extracting" ? "Reading the walk" : "Sending frames"}
-          </p>
-          <p className="mt-1 text-[0.8125rem] text-[var(--ink-2)]">
-            {phase.kind === "extracting"
-              ? "Scoring frames for sharpness and keeping the best of each pass."
-              : "Only the selected frames upload — the video stays on your phone."}
-          </p>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]">
-            <div
-              className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300"
-              style={{ width: `${Math.round((phase.done / Math.max(1, phase.total)) * 100)}%` }}
-            />
-          </div>
-          <p className="tnum mt-1.5 text-xs text-[var(--ink-3)]">
-            {phase.done} / {phase.total}
-          </p>
-        </div>
-      )}
-
       {phase.kind === "idle" && (
-        <div className="card p-5">
-          <h2 className="text-sm font-semibold">How to film this stage</h2>
-          <ul className="mt-2.5 space-y-2">
+        <section className="card overflow-hidden">
+          <div className="border-b border-[var(--line)] px-4 py-3">
+            <h2 className="eyebrow">How to film this stage</h2>
+          </div>
+          <ul className="px-4 py-3">
             {captureGuide.map((g) => (
-              <li key={g} className="flex gap-2.5 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[var(--accent)]" />
+              <li
+                key={g}
+                className="flex gap-2.5 py-1.5 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]"
+              >
+                <span
+                  className="mt-[0.4375rem] h-1 w-1 shrink-0 rounded-full bg-[var(--accent)]"
+                  aria-hidden
+                />
                 {g}
               </li>
             ))}
           </ul>
-        </div>
+        </section>
       )}
 
       <input
@@ -212,16 +238,15 @@ export default function CaptureFlow({
       <button
         type="button"
         className="btn btn-primary w-full"
-        disabled={phase.kind === "extracting" || phase.kind === "uploading"}
         onClick={() => fileRef.current?.click()}
       >
-        {phase.kind === "error" ? "Try again" : "Film this stage"}
+        {phase.kind === "error" ? "Film it again" : "Film this stage"}
       </button>
 
       {!reconEnabled && (
-        <p className="text-center text-xs leading-relaxed text-[var(--ink-3)]">
-          No reconstruction endpoint is configured, so this run will be simulated and clearly
-          labelled as such.
+        <p className="text-center text-[0.6875rem] leading-relaxed text-[var(--ink-3)]">
+          No reconstruction endpoint is configured. This run will be simulated, and every screen it
+          touches says so.
         </p>
       )}
     </div>
@@ -231,16 +256,17 @@ export default function CaptureFlow({
 function Working({ steps, simulated }: { steps: JobStep[]; simulated: boolean }) {
   const shown = steps.length > 0 ? steps : PLACEHOLDER;
   return (
-    <div className="card overflow-hidden">
-      <div className="relative h-1 overflow-hidden bg-[var(--surface-2)]">
-        <div className="sweeping absolute inset-0" />
-      </div>
-      <div className="p-5">
-        <h2 className="text-sm font-semibold">Reconstructing</h2>
-        <p className="mt-1 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
+    <section className="plate overflow-hidden" aria-busy>
+      <SplashLoader
+        caption={simulated ? "SIMULATING RECONSTRUCTION" : "RECONSTRUCTING 3D MODEL"}
+        markSize={116}
+        className="py-7!"
+      />
+      <div className="border-t border-[var(--line)] px-5 py-4">
+        <p className="text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
           {simulated
-            ? "Simulated run — no GPU endpoint is configured."
-            : "Running on a GPU worker. You can leave this page; the record keeps the result."}
+            ? "Simulated run — no GPU endpoint is configured, and the result will be labelled as stand-in geometry."
+            : "Running on a GPU worker. You can leave this page and put the phone away; the record keeps the result."}
         </p>
         <ol className="mt-4 space-y-2.5">
           {shown.map((s) => (
@@ -253,21 +279,19 @@ function Working({ steps, simulated }: { steps: JobStep[]; simulated: boolean })
               >
                 {s.label}
               </span>
-              {s.state === "running" && (
-                <span className="label pulsing ml-auto">working</span>
-              )}
+              {s.state === "running" && <span className="label pulsing ml-auto">working</span>}
             </li>
           ))}
         </ol>
       </div>
-    </div>
+    </section>
   );
 }
 
 function StepDot({ state }: { state: JobStep["state"] }) {
   if (state === "done") {
     return (
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--accent)]">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-[var(--accent)]">
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden>
           <path
             d="M2.5 6.2 4.8 8.5 9.5 3.8"
@@ -281,11 +305,11 @@ function StepDot({ state }: { state: JobStep["state"] }) {
     );
   }
   if (state === "failed") {
-    return <span className="h-5 w-5 shrink-0 rounded-full bg-[var(--grade-f)]" />;
+    return <span className="h-5 w-5 shrink-0 rounded-[5px] bg-[var(--grade-f)]" />;
   }
   return (
     <span
-      className={`h-5 w-5 shrink-0 rounded-full border-2 ${state === "running" ? "pulsing border-[var(--accent)]" : "border-[var(--line)]"}`}
+      className={`h-5 w-5 shrink-0 rounded-[5px] border-2 ${state === "running" ? "pulsing border-[var(--accent)]" : "border-[var(--line)]"}`}
     />
   );
 }

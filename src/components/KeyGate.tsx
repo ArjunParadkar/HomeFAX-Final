@@ -1,13 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 export default function KeyGate() {
   const router = useRouter();
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const inputId = useId();
+  const errorId = useId();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,13 +23,13 @@ export default function KeyGate() {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error ?? "That key did not work.");
+        setError(body.error ?? "That key is not on this deployment. Check it and try again.");
         return;
       }
       router.push("/records");
       router.refresh();
     } catch {
-      setError("Could not reach the server. Check your connection.");
+      setError("Could not reach the server. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -35,11 +37,11 @@ export default function KeyGate() {
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <label className="label block" htmlFor="access-key">
+      <label className="label block" htmlFor={inputId}>
         Access key
       </label>
       <input
-        id="access-key"
+        id={inputId}
         value={key}
         onChange={(e) => setKey(e.target.value)}
         autoComplete="one-time-code"
@@ -47,11 +49,17 @@ export default function KeyGate() {
         autoCorrect="off"
         spellCheck={false}
         placeholder="hfx-…"
-        className="tnum w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3.5 text-base outline-none focus:border-[var(--accent)]"
+        aria-invalid={error != null}
+        aria-describedby={error ? errorId : undefined}
+        className="input tnum"
       />
-      {error && <p className="text-sm text-[var(--grade-f)]">{error}</p>}
+      <p id={errorId} role="status" aria-live="polite" className="empty:hidden">
+        {error && (
+          <span className="text-[0.8125rem] leading-relaxed text-[var(--grade-f)]">{error}</span>
+        )}
+      </p>
       <button type="submit" disabled={busy || key.length === 0} className="btn btn-primary w-full">
-        {busy ? "Checking…" : "Open HomeFAX"}
+        {busy ? "Checking key…" : "Open HomeFAX"}
       </button>
     </form>
   );

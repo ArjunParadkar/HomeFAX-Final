@@ -123,11 +123,51 @@ export type DimensionScore = {
   basis: string; // one line explaining what produced the number
 };
 
+/**
+ * The 50-point ledger. Every HomeFAX record is assessed against the same 50
+ * named checkpoints; each stage evaluates the subset that is visible at that
+ * stage. A checkpoint verdict always says where it came from.
+ */
+export type CheckpointStatus = "pass" | "attention" | "fail" | "not_assessable";
+
+export type CheckpointResult = {
+  /** Stable id, "QC-01" through "QC-50". */
+  id: string;
+  /** 1-50, for display ordering. */
+  num: number;
+  title: string;
+  /** The best practice or code expectation being checked, one line. */
+  standard: string;
+  /** What failing this costs the building over its life, one line. */
+  longevity: string;
+  category: CheckpointCategory;
+  status: CheckpointStatus;
+  /** One line of evidence: the measurement or the frame observation behind the verdict. */
+  evidence: string;
+  source: "geometry" | "capture" | "vision";
+  keyframeIndex?: number;
+};
+
+export type CheckpointCategory =
+  | "structure"
+  | "envelope"
+  | "mechanical"
+  | "surfaces"
+  | "moisture"
+  | "safety"
+  | "capture";
+
 export type QualityReport = {
   score: number; // 0-100 weighted
   grade: "A" | "B" | "C" | "D" | "F";
   dimensions: DimensionScore[];
   findings: Finding[];
+  /** Verdicts for every checkpoint applicable at this stage. */
+  checkpoints?: CheckpointResult[];
+  /** Passed / assessed counts over the applicable set, for the headline. */
+  checkpointsPassed?: number;
+  checkpointsAssessed?: number;
+  checkpointsApplicable?: number;
   /** True only when the visual review produced a usable assessment. */
   visionAvailable: boolean;
   /** Why the judged dimensions were or were not scored. */
@@ -157,7 +197,7 @@ export type PartLine = {
   category: PartCategory;
   spec?: string;
   quantity: number;
-  unit: "ea" | "lf" | "sf" | "cy" | "sheet" | "box" | "roll";
+  unit: "ea" | "lf" | "sf" | "cy" | "sheet" | "box" | "roll" | "gal" | "pail" | "tube" | "pair" | "set";
   /** How the quantity was arrived at — the number is only as good as this. */
   basis: "measured" | "detected" | "derived";
   /** Plain-language derivation, e.g. "112 lf wall / 16in OC + 3 corners". */
@@ -165,6 +205,19 @@ export type PartLine = {
   confidence: number; // 0-1
   unitCostUsd?: number;
   stage: StageId;
+  /**
+   * Exact identification, when the review could read it off a label, nameplate,
+   * or finish: manufacturer, model/product line, color, size. Only populated
+   * from something actually legible in a frame — never inferred.
+   */
+  identified?: {
+    manufacturer?: string;
+    model?: string;
+    color?: string;
+    finish?: string;
+    size?: string;
+    readFrom?: string; // e.g. "nameplate in frame 4"
+  };
 };
 
 export type StageRecord = {

@@ -1,3 +1,4 @@
+import { evaluateCheckpoints } from "./checkpoints";
 import { cumulativeParts, takeoffFromGeometry } from "./parts";
 import { buildQualityReport } from "./quality";
 import { pollRecon } from "./recon";
@@ -73,7 +74,17 @@ export async function advanceCapture(id: string): Promise<CaptureRow | null> {
         ? "The footage does not show this construction stage, so workmanship and compliance were not scored."
         : undefined;
 
-  const quality = buildQualityReport(job.result, stage, vision.findings, { status, note });
+  // The 50-point ledger: measured points verdict off the reconstruction, the
+  // judged points off the review — and only a review that confirmed the stage
+  // may supply verdicts, otherwise every judged point reads not_assessable.
+  const ledger = evaluateCheckpoints(
+    job.result,
+    stage,
+    status === "graded" ? vision.checkpointVerdicts : [],
+    status === "graded" ? undefined : (note ?? "visual review unavailable"),
+  );
+
+  const quality = buildQualityReport(job.result, stage, vision.findings, { status, note }, ledger);
   const geometryParts = takeoffFromGeometry(job.result, stage);
   // One list per stage: measured quantities plus anything the review counted.
   const parts = cumulativeParts([{ stage, parts: [...geometryParts, ...vision.parts] }]);

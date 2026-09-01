@@ -1,7 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
-import { expectedSkusForStage, partFromDetection } from "./parts";
+import {
+  visionCheckpointPrompt,
+  visionCheckpointsForStage,
+  type VisionVerdict,
+} from "./checkpoints";
+import { buildPartsIdPrompt, detectionToPartLine, ExactDetection } from "./parts-id";
 import { stageDef } from "./stages";
 import type { Finding, PartLine, SceneGeometry, StageId } from "./types";
 
@@ -36,11 +41,16 @@ const FindingSchema = z.object({
   frameIndex: z.number().describe("Zero-based index of the frame this was seen in"),
 });
 
-const DetectionSchema = z.object({
-  sku: z.string().describe("Must be one of the catalogue SKUs provided"),
-  quantity: z.number().describe("Count of this item visible across the frames, not an estimate for the whole house"),
-  confidence: z.number().describe("0 to 1"),
-  reasoning: z.string().describe("One sentence naming where the count came from"),
+const CheckpointVerdictSchema = z.object({
+  id: z.string().describe("The checkpoint id exactly as given, e.g. QC-19"),
+  status: z.enum(["pass", "attention", "fail", "not_assessable"]),
+  evidence: z
+    .string()
+    .describe("One line naming what is visible and the frame number it is in; for not_assessable, why it could not be judged"),
+  frameIndex: z
+    .number()
+    .nullable()
+    .describe("Zero-based frame index the evidence is in, or null for not_assessable"),
 });
 
 const ReportSchema = z.object({
@@ -49,7 +59,10 @@ const ReportSchema = z.object({
     .describe("Whether the frames actually show the construction stage claimed"),
   summary: z.string().describe("Two sentences a homeowner would understand"),
   findings: z.array(FindingSchema),
-  detections: z.array(DetectionSchema),
+  detections: z.array(ExactDetection),
+  checkpoints: z
+    .array(CheckpointVerdictSchema)
+    .describe("One verdict for every 50-point checkpoint id listed in the instructions — no more, no fewer"),
 });
 
 export type VisionReport = {
@@ -58,6 +71,8 @@ export type VisionReport = {
   summary: string;
   findings: Finding[];
   parts: PartLine[];
+  /** Verdicts for this stage's judged 50-point checkpoints. */
+  checkpointVerdicts: VisionVerdict[];
   /** Set when vision ran but could not be used, so the UI can say why. */
   unavailableReason?: string;
 };
@@ -83,6 +98,7 @@ export async function analyzeStage(args: {
     summary: "",
     findings: [],
     parts: [],
+    checkpointVerdicts: [],
   };
 
   if (!visionConfigured) {
@@ -97,7 +113,6 @@ export async function analyzeStage(args: {
   }
 
   const def = stageDef(args.stage);
-  const catalog = expectedSkusForStage(args.stage);
   const frames = pickSpread(args.keyframeUrls, MAX_FRAMES);
 
   const client = new Anthropic();
@@ -108,8 +123,7 @@ export async function analyzeStage(args: {
     "Inspection checklist for this stage:",
     ...def.checklist.map((c, i) => `${i + 1}. ${c}`),
     "",
-    "Catalogue SKUs you may count:",
-    ...catalog.map((c) => `- ${c.sku}: ${c.name}${c.spec ? ` (${c.spec})` : ""} — counted in ${c.unit}`),
+    buildPartsIdPrompt(args.stage, args.geometry),
     "",
     "Already measured from the 3D model (do not re-report these):",
     `- Floor area ${args.geometry.floorAreaM2.toFixed(1)} m², wall area ${args.geometry.wallAreaM2.toFixed(1)} m²`,
@@ -119,6 +133,8 @@ export async function analyzeStage(args: {
     args.geometry.studSpacingIn != null
       ? `- Stud spacing ${args.geometry.studSpacingIn.toFixed(1)} in on centre`
       : "- No repeating framing members detected",
+    "",
+    visionCheckpointPrompt(args.stage),
     "",
     `${frames.length} frames follow, indexed from 0 in the order shown.`,
   ].join("\n");
@@ -163,10 +179,20 @@ export async function analyzeStage(args: {
     }));
 
     const parts = parsed.detections
-      .map((d) =>
-        partFromDetection(d.sku, d.quantity, clamp01(d.confidence), d.reasoning, args.stage),
-      )
+      .map((d) => detectionToPartLine(d, args.stage))
       .filter((p): p is PartLine => p !== null);
+
+    // Only verdicts for ids this stage actually asked about; anything else the
+    // model invented is dropped rather than trusted.
+    const askedIds = new Set(visionCheckpointsForStage(args.stage).map((c) => c.id));
+    const checkpointVerdicts: VisionVerdict[] = parsed.checkpoints
+      .filter((c) => askedIds.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        status: c.status,
+        evidence: c.evidence,
+        frameIndex: c.frameIndex ?? undefined,
+      }));
 
     return {
       available: true,
@@ -174,16 +200,13 @@ export async function analyzeStage(args: {
       summary: parsed.summary,
       findings,
       parts,
+      checkpointVerdicts,
     };
   } catch (err) {
     // A grading failure must never sink a reconstruction that already succeeded.
     const message = err instanceof Error ? err.message : String(err);
     return { ...empty, unavailableReason: `Vision grading failed: ${message}` };
   }
-}
-
-function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
 }
 
 /** Evenly spaced sample, so the frames span the whole walk rather than its first seconds. */

@@ -1,3 +1,4 @@
+import type { CheckpointEvaluation } from "./checkpoints";
 import { stageDef } from "./stages";
 import type {
   DimensionScore,
@@ -253,6 +254,7 @@ export function buildQualityReport(
     status: NonNullable<QualityReport["visionStatus"]>;
     note?: string;
   },
+  ledger?: CheckpointEvaluation,
 ): QualityReport {
   // Only a review that actually assessed this stage may score it. A review that
   // ran but found the wrong subject would otherwise score a perfect 100 for
@@ -319,5 +321,13 @@ export function buildQualityReport(
     visionAvailable,
     visionStatus: vision.status,
     visionNote: vision.note,
+    // The 50-point ledger rides alongside the score: same thresholds feed
+    // both, so the two views agree; the ledger is the readable half.
+    ...(ledger && {
+      checkpoints: ledger.results,
+      checkpointsPassed: ledger.passed,
+      checkpointsAssessed: ledger.assessed,
+      checkpointsApplicable: ledger.applicable,
+    }),
   };
 }

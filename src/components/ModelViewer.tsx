@@ -50,11 +50,7 @@ function ProceduralRoom() {
     g.add(floor);
 
     const studGeo = new THREE.BoxGeometry(0.038, wallH, 0.089);
-    const addRun = (
-      length: number,
-      origin: [number, number],
-      axis: "x" | "z",
-    ) => {
+    const addRun = (length: number, origin: [number, number], axis: "x" | "z") => {
       const count = Math.floor(length / spacing) + 1;
       for (let i = 0; i < count; i++) {
         const stud = new THREE.Mesh(studGeo, lumber);
@@ -98,24 +94,27 @@ function ProceduralRoom() {
   return <primitive object={group} />;
 }
 
-export default function ModelViewer({
-  url,
-  className,
-}: {
-  url: string;
-  className?: string;
-}) {
+export default function ModelViewer({ url, className }: { url: string; className?: string }) {
   const isProcedural = url === PROCEDURAL;
 
   return (
-    <div className={className}>
+    <div
+      className={className}
+      role="img"
+      aria-label={
+        isProcedural
+          ? "Stand-in 3D model of a framed room"
+          : "Interactive 3D model of this stage. Drag to orbit, pinch to zoom."
+      }
+    >
       <Canvas
         camera={{ position: [4.5, 3.2, 5.5], fov: 42 }}
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
         style={{ touchAction: "none" }}
       >
-        <color attach="background" args={["#0f0d0b"]} />
+        {/* Onyx exactly — the canvas has to disappear into the plate around it. */}
+        <color attach="background" args={["#16130f"]} />
         <hemisphereLight args={["#fff4e2", "#2b241d", 1.15]} />
         <directionalLight position={[6, 9, 4]} intensity={1.5} castShadow={false} />
         <directionalLight position={[-5, 3, -4]} intensity={0.45} />

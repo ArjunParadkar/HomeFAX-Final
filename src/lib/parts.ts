@@ -1,6 +1,3 @@
-import { stageDef, stageIndex } from "./stages";
-import type { PartCategory, PartLine, ReconResult, StageId } from "./types";
-
 /**
  * Quantity takeoff.
  *
@@ -14,209 +11,25 @@ import type { PartCategory, PartLine, ReconResult, StageId } from "./types";
  *
  * Nothing here invents a quantity out of nothing: every line carries the
  * derivation string that produced it.
+ *
+ * Confidence haircut rule: scaleSource "assumed" caps measured lines at 0.55;
+ * reference or stud-spacing scale starts at 0.85. Derived lines carry their own
+ * lower baseline (0.35–0.5) since they add heuristic uncertainty on top.
  */
+
+import { stageIndex } from "./stages";
+import type { PartLine, ReconResult, StageId } from "./types";
+
+// Re-export the catalog types and helpers so that existing importers
+// (vision.ts: expectedSkusForStage, partFromDetection) keep working without
+// changing their import paths.
+export type { CatalogEntry } from "./catalog";
+export { CATALOG, CATALOG_SKUS, expectedSkusForStage } from "./catalog";
+
+import { CATALOG } from "./catalog";
 
 const M2_PER_FT2 = 0.092903;
 const M_PER_FT = 0.3048;
-
-export type CatalogEntry = {
-  sku: string;
-  name: string;
-  category: PartCategory;
-  unit: PartLine["unit"];
-  spec?: string;
-  unitCostUsd?: number;
-};
-
-/** A deliberately small catalogue — the common residential lines, priced roughly. */
-export const CATALOG: Record<string, CatalogEntry> = {
-  "LUM-2X4-92": {
-    sku: "LUM-2X4-92",
-    name: "2x4 stud",
-    category: "lumber",
-    unit: "ea",
-    spec: "92-5/8in precut SPF",
-    unitCostUsd: 4.28,
-  },
-  "LUM-2X4-PLATE": {
-    sku: "LUM-2X4-PLATE",
-    name: "2x4 plate stock",
-    category: "lumber",
-    unit: "lf",
-    spec: "SPF, top and bottom plates",
-    unitCostUsd: 0.72,
-  },
-  "LUM-2X10-HDR": {
-    sku: "LUM-2X10-HDR",
-    name: "2x10 header stock",
-    category: "lumber",
-    unit: "lf",
-    spec: "SPF #2",
-    unitCostUsd: 3.15,
-  },
-  "SHT-OSB-716": {
-    sku: "SHT-OSB-716",
-    name: "7/16in OSB sheathing",
-    category: "lumber",
-    unit: "sheet",
-    spec: "4x8",
-    unitCostUsd: 18.5,
-  },
-  "DRY-12-4X8": {
-    sku: "DRY-12-4X8",
-    name: "1/2in drywall",
-    category: "drywall",
-    unit: "sheet",
-    spec: "4x8 regular",
-    unitCostUsd: 14.2,
-  },
-  "DRY-MUD": {
-    sku: "DRY-MUD",
-    name: "Joint compound",
-    category: "drywall",
-    unit: "ea",
-    spec: "4.5 gal all-purpose",
-    unitCostUsd: 17.8,
-  },
-  "DRY-TAPE": {
-    sku: "DRY-TAPE",
-    name: "Paper joint tape",
-    category: "drywall",
-    unit: "roll",
-    spec: "500ft",
-    unitCostUsd: 6.4,
-  },
-  "INS-R13-BATT": {
-    sku: "INS-R13-BATT",
-    name: "R-13 batt insulation",
-    category: "insulation",
-    unit: "sf",
-    spec: "15in x 93in kraft-faced",
-    unitCostUsd: 0.68,
-  },
-  "INS-R38-BATT": {
-    sku: "INS-R38-BATT",
-    name: "R-38 batt insulation",
-    category: "insulation",
-    unit: "sf",
-    spec: "ceiling, unfaced",
-    unitCostUsd: 1.35,
-  },
-  "ELE-BOX-1G": {
-    sku: "ELE-BOX-1G",
-    name: "Single-gang box",
-    category: "electrical",
-    unit: "ea",
-    spec: "18 cu in nail-on",
-    unitCostUsd: 1.35,
-  },
-  "ELE-NM-12-2": {
-    sku: "ELE-NM-12-2",
-    name: "12-2 NM-B cable",
-    category: "electrical",
-    unit: "lf",
-    spec: "with ground",
-    unitCostUsd: 0.92,
-  },
-  "ELE-NM-14-2": {
-    sku: "ELE-NM-14-2",
-    name: "14-2 NM-B cable",
-    category: "electrical",
-    unit: "lf",
-    spec: "with ground",
-    unitCostUsd: 0.61,
-  },
-  "ELE-PLATE-NAIL": {
-    sku: "ELE-PLATE-NAIL",
-    name: "Steel nail plate",
-    category: "electrical",
-    unit: "ea",
-    spec: "1-1/2in x 2-5/8in",
-    unitCostUsd: 0.42,
-  },
-  "PLM-PEX-12": {
-    sku: "PLM-PEX-12",
-    name: "1/2in PEX-A tubing",
-    category: "plumbing",
-    unit: "lf",
-    unitCostUsd: 0.55,
-  },
-  "PLM-PVC-3": {
-    sku: "PLM-PVC-3",
-    name: "3in PVC DWV pipe",
-    category: "plumbing",
-    unit: "lf",
-    unitCostUsd: 4.1,
-  },
-  "PLM-PVC-2": {
-    sku: "PLM-PVC-2",
-    name: "2in PVC DWV pipe",
-    category: "plumbing",
-    unit: "lf",
-    unitCostUsd: 2.35,
-  },
-  "HVA-DUCT-FLEX8": {
-    sku: "HVA-DUCT-FLEX8",
-    name: "8in insulated flex duct",
-    category: "hvac",
-    unit: "lf",
-    spec: "R-8",
-    unitCostUsd: 3.9,
-  },
-  "HVA-BOOT": {
-    sku: "HVA-BOOT",
-    name: "Register boot",
-    category: "hvac",
-    unit: "ea",
-    spec: "4x10 to 6in",
-    unitCostUsd: 8.75,
-  },
-  "CON-READYMIX": {
-    sku: "CON-READYMIX",
-    name: "Ready-mix concrete",
-    category: "concrete",
-    unit: "cy",
-    spec: "3000 psi",
-    unitCostUsd: 168,
-  },
-  "CON-REBAR-4": {
-    sku: "CON-REBAR-4",
-    name: "#4 rebar",
-    category: "concrete",
-    unit: "lf",
-    unitCostUsd: 0.78,
-  },
-  "FAS-NAIL-16D": {
-    sku: "FAS-NAIL-16D",
-    name: "16d framing nails",
-    category: "fastener",
-    unit: "box",
-    spec: "5 lb collated",
-    unitCostUsd: 24.5,
-  },
-  "FAS-SCREW-125": {
-    sku: "FAS-SCREW-125",
-    name: "1-1/4in drywall screws",
-    category: "fastener",
-    unit: "box",
-    spec: "5 lb",
-    unitCostUsd: 21.9,
-  },
-  "ROO-SHINGLE": {
-    sku: "ROO-SHINGLE",
-    name: "Architectural shingles",
-    category: "roofing",
-    unit: "sf",
-    unitCostUsd: 1.28,
-  },
-  "ROO-UNDERLAY": {
-    sku: "ROO-UNDERLAY",
-    name: "Synthetic underlayment",
-    category: "roofing",
-    unit: "sf",
-    unitCostUsd: 0.19,
-  },
-};
 
 function line(
   sku: string,
@@ -266,6 +79,34 @@ export function takeoffFromGeometry(recon: ReconResult, stage: StageId): PartLin
   const conf = recon.metrics.scaleSource === "assumed" ? 0.55 : 0.85;
 
   switch (stage) {
+    case "site": {
+      // Vapor barrier covers the crawlspace / under-slab footprint.
+      const vbRolls = Math.max(1, Math.ceil(floorFt2 / 2000));
+      out.push(
+        line(
+          "CON-VAPOR-BAR",
+          vbRolls,
+          "measured",
+          `${floorFt2.toFixed(0)} sf footprint / 2000 sf per roll${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
+      );
+      // Form stakes: ~2 per linear foot of excavation perimeter.
+      const formStakes = Math.max(4, Math.ceil(wallLf * 2));
+      out.push(
+        line(
+          "CON-FORM-STAKE",
+          formStakes,
+          "derived",
+          `${wallLf.toFixed(0)} lf of form perimeter x 2 stakes per lf`,
+          0.4,
+          stage,
+        ),
+      );
+      break;
+    }
+
     case "foundation": {
       // Slab at 4in, footings ignored — they are not visible in the mesh.
       const cy = (floorFt2 * (4 / 12)) / 27;
@@ -292,8 +133,22 @@ export function takeoffFromGeometry(recon: ReconResult, stage: StageId): PartLin
           stage,
         ),
       );
+      // Anchor bolts: IRC requires one within 12in of each end of every sill piece
+      // and at 6ft max OC; perimeter at 6ft OC is a conservative estimate.
+      const anchorBolts = Math.ceil(wallLf / 6);
+      out.push(
+        line(
+          "CON-ANCHOR-BOLT",
+          anchorBolts,
+          "derived",
+          `${wallLf.toFixed(0)} lf of sill / 6ft OC (IRC minimum spacing)`,
+          0.5,
+          stage,
+        ),
+      );
       break;
     }
+
     case "framing": {
       const studs = Math.ceil((wallLf * 12) / spacingIn) + 3; // +3 for corners and channel
       out.push(
@@ -336,8 +191,21 @@ export function takeoffFromGeometry(recon: ReconResult, stage: StageId): PartLin
           stage,
         ),
       );
+      // Hurricane ties: one per rafter/truss end — estimated from footprint perimeter.
+      const rafterCount = Math.ceil((wallLf / 2) / (spacingIn / 12));
+      out.push(
+        line(
+          "HRD-HURR-TIE",
+          rafterCount * 2,
+          "derived",
+          `${rafterCount} rafter positions x 2 ties (each end), at ${spacingIn.toFixed(1)}in OC`,
+          0.4,
+          stage,
+        ),
+      );
       break;
     }
+
     case "roofing": {
       // Roof area approximated from footprint with a 6:12 pitch factor.
       const roofFt2 = floorFt2 * 1.118;
@@ -354,8 +222,240 @@ export function takeoffFromGeometry(recon: ReconResult, stage: StageId): PartLin
       out.push(
         line("ROO-UNDERLAY", roofFt2, "derived", "one to one with shingle coverage", conf * 0.75, stage),
       );
+      // House wrap: wall area only (roofing underlayment covers the deck).
+      const wrapRolls = Math.max(1, Math.ceil(wallFt2 / 1000));
+      out.push(
+        line(
+          "ROO-WRAP",
+          wrapRolls,
+          "measured",
+          `${wallFt2.toFixed(0)} sf of wall / 1000 sf per roll${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
+      );
+      // Drip edge: eave length ≈ half the perimeter each side; gable ends the other half.
+      out.push(
+        line(
+          "ROO-DRIP-EDGE",
+          wallLf,
+          "derived",
+          `${wallLf.toFixed(0)} lf of perimeter (eave + gable drip edge)`,
+          0.45,
+          stage,
+        ),
+      );
+      // Roofing nails: 1 box per ~1000 sf of roofing.
+      out.push(
+        line(
+          "ROO-NAILS",
+          Math.max(1, Math.ceil(roofFt2 / 1000)),
+          "derived",
+          `${roofFt2.toFixed(0)} sf of roof / 1000 sf per box`,
+          0.5,
+          stage,
+        ),
+      );
+      // Ice & water shield: 3ft at eaves + valleys; estimated as 2 rolls for a typical house.
+      out.push(
+        line(
+          "ROO-ICE-WATER",
+          Math.max(1, Math.ceil(wallLf / 100)),
+          "derived",
+          `${wallLf.toFixed(0)} lf perimeter / 100 lf per roll (3ft eave coverage)`,
+          0.4,
+          stage,
+        ),
+      );
       break;
     }
+
+    case "rough_plumbing": {
+      // PEX supply lines: 0.8x wall run factor for horizontal + vertical routing.
+      out.push(
+        line(
+          "PLM-PEX-12",
+          wallLf * 0.8,
+          "derived",
+          `${wallLf.toFixed(0)} lf of wall x 0.8 supply routing factor`,
+          0.4,
+          stage,
+        ),
+      );
+      // Main DWV stack and primary waste runs: 3in pipe.
+      const dwv3Lf = Math.max(4, Math.ceil(wallLf * 0.25));
+      out.push(
+        line(
+          "PLM-PVC-3",
+          dwv3Lf,
+          "derived",
+          `${wallLf.toFixed(0)} lf wall x 0.25 factor for main DWV stack and primary waste runs`,
+          0.4,
+          stage,
+        ),
+      );
+      // Branch drains and vent lines: 2in pipe.
+      const dwv2Lf = Math.max(6, Math.ceil(wallLf * 0.35));
+      out.push(
+        line(
+          "PLM-PVC-2",
+          dwv2Lf,
+          "derived",
+          `${wallLf.toFixed(0)} lf wall x 0.35 factor for branch drains and individual vents`,
+          0.4,
+          stage,
+        ),
+      );
+      // Nail plates protecting supply lines running through stud faces.
+      const plmNailPlates = Math.max(4, Math.ceil(wallLf / 8));
+      out.push(
+        line(
+          "ELE-PLATE-NAIL",
+          plmNailPlates,
+          "derived",
+          `${wallLf.toFixed(0)} lf of wall / 8 lf per nail plate protecting PEX supply lines`,
+          0.35,
+          stage,
+        ),
+      );
+      break;
+    }
+
+    case "rough_electrical": {
+      // 14-2 for lighting circuits: 1.6x wall length routing factor.
+      out.push(
+        line(
+          "ELE-NM-14-2",
+          wallLf * 1.6,
+          "derived",
+          `${wallLf.toFixed(0)} lf of wall x 1.6 routing factor for lighting circuits`,
+          0.45,
+          stage,
+        ),
+      );
+      // 12-2 for kitchen, bath, garage 20A circuits: ~0.4x wall factor.
+      out.push(
+        line(
+          "ELE-NM-12-2",
+          wallLf * 0.4,
+          "derived",
+          `${wallLf.toFixed(0)} lf wall x 0.4 factor for 20A kitchen/bath circuits`,
+          0.4,
+          stage,
+        ),
+      );
+      // NEC 210.52: receptacle within 6ft of any point along wall →
+      // approximately one box per 12 lf of wall, plus switches.
+      const boxCount = Math.max(4, Math.ceil(wallLf / 12) + 3);
+      out.push(
+        line(
+          "ELE-BOX-1G",
+          boxCount,
+          "derived",
+          `NEC 210.52 heuristic: 1 box per 12 lf of wall (${wallLf.toFixed(0)} lf) + 3 switch locations`,
+          0.4,
+          stage,
+        ),
+      );
+      // Receptacles: ~70% of boxes are receptacle locations.
+      out.push(
+        line(
+          "ELE-RECEP",
+          Math.ceil(boxCount * 0.7),
+          "derived",
+          `~70% of ${boxCount} box locations are receptacle positions`,
+          0.4,
+          stage,
+        ),
+      );
+      // Nail plates: one per cable run through framing within 1-1/4in of stud face.
+      out.push(
+        line(
+          "ELE-PLATE-NAIL",
+          boxCount,
+          "derived",
+          `1 nail plate per box for cable runs within 1-1/4in of stud face (NEC 300.4)`,
+          0.4,
+          stage,
+        ),
+      );
+      break;
+    }
+
+    case "hvac": {
+      // Trunk duct: roughly 1 lf per 100 sf of conditioned floor area.
+      const trunkLf = Math.max(4, Math.ceil(floorFt2 / 100));
+      out.push(
+        line(
+          "HVA-TRUNK",
+          trunkLf,
+          "derived",
+          `${floorFt2.toFixed(0)} sf floor / 100 sf per lf of trunk duct (rule-of-thumb)`,
+          0.4,
+          stage,
+        ),
+      );
+      // Register boots: 1 per ~150 sf of conditioned area.
+      const regCount = Math.max(2, Math.ceil(floorFt2 / 150));
+      out.push(
+        line(
+          "HVA-BOOT",
+          regCount,
+          "derived",
+          `1 boot per 150 sf of conditioned floor area; ${floorFt2.toFixed(0)} sf`,
+          0.45,
+          stage,
+        ),
+      );
+      // Flex duct: average 8 lf branch per register.
+      const flexLf = regCount * 8;
+      out.push(
+        line(
+          "HVA-DUCT-FLEX8",
+          flexLf,
+          "derived",
+          `${regCount} registers x 8 lf avg branch run from trunk`,
+          0.4,
+          stage,
+        ),
+      );
+      // Supply registers and return grille.
+      out.push(
+        line(
+          "HVA-REGISTER",
+          regCount,
+          "derived",
+          `1 supply register per boot`,
+          0.45,
+          stage,
+        ),
+      );
+      // Return grille: 1 per 500 sf — minimum 1.
+      const grilles = Math.max(1, Math.ceil(floorFt2 / 500));
+      out.push(
+        line(
+          "HVA-GRILLE",
+          grilles,
+          "derived",
+          `${floorFt2.toFixed(0)} sf floor / 500 sf per return grille`,
+          0.4,
+          stage,
+        ),
+      );
+      // Thermostat: 1 per system.
+      out.push(
+        line(
+          "HVA-THERMO",
+          1,
+          "derived",
+          `1 thermostat per system`,
+          0.6,
+          stage,
+        ),
+      );
+      break;
+    }
+
     case "insulation": {
       out.push(
         line(
@@ -370,8 +470,21 @@ export function takeoffFromGeometry(recon: ReconResult, stage: StageId): PartLin
       out.push(
         line("INS-R38-BATT", floorFt2, "measured", `${floorFt2.toFixed(0)} sf of ceiling`, conf, stage),
       );
+      // Spray-foam cans for air-sealing top plates and penetrations.
+      const foamCans = Math.max(2, Math.ceil(wallLf / 20));
+      out.push(
+        line(
+          "INS-SPRAYFOAM",
+          foamCans,
+          "derived",
+          `${wallLf.toFixed(0)} lf of top plate / 20 lf per can for penetration air-sealing`,
+          0.4,
+          stage,
+        ),
+      );
       break;
     }
+
     case "drywall": {
       const boardFt2 = wallFt2 + floorFt2; // walls plus ceiling
       const sheets = Math.ceil((boardFt2 * 1.1) / 32); // 10% waste
@@ -390,28 +503,108 @@ export function takeoffFromGeometry(recon: ReconResult, stage: StageId): PartLin
       out.push(
         line("FAS-SCREW-125", Math.ceil(sheets / 60), "derived", "one 5 lb box per 60 sheets", 0.6, stage),
       );
-      break;
-    }
-    case "rough_electrical": {
-      // Cable estimated from wall run: a home run averages ~1.6x the wall length it serves.
+      // Corner bead: vertical outside corners; rough estimate from wall perimeter.
+      const cornerBeadLf = heightFt * Math.ceil(wallLf / 16);
       out.push(
         line(
-          "ELE-NM-14-2",
-          wallLf * 1.6,
+          "DRY-CORNER-BEAD",
+          cornerBeadLf,
           "derived",
-          `${wallLf.toFixed(0)} lf of wall x 1.6 routing factor for lighting circuits`,
-          0.45,
+          `est. ${Math.ceil(wallLf / 16)} outside corners x ${heightFt.toFixed(1)}ft height`,
+          0.4,
           stage,
         ),
       );
       break;
     }
-    case "rough_plumbing": {
+
+    case "finishes": {
+      const ceilFt2 = floorFt2; // ceiling area mirrors floor area
+      // Paint: two coats at 350 sf/gal/coat.
+      const wallGal = Math.max(1, Math.ceil((wallFt2 * 2) / 350));
+      const ceilGal = Math.max(1, Math.ceil((ceilFt2 * 2) / 350));
       out.push(
-        line("PLM-PEX-12", wallLf * 0.8, "derived", `${wallLf.toFixed(0)} lf of wall x 0.8 supply routing factor`, 0.4, stage),
+        line(
+          "FIN-PAINT-EGGSHELL",
+          wallGal,
+          "measured",
+          `${wallFt2.toFixed(0)} sf of wall x 2 coats / 350 sf per gal per coat${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
+      );
+      out.push(
+        line(
+          "FIN-PAINT-CEILING",
+          ceilGal,
+          "measured",
+          `${ceilFt2.toFixed(0)} sf of ceiling x 2 coats / 350 sf per gal per coat${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
+      );
+      // Primer: 1 coat at 400 sf/gal over new drywall.
+      const primerGal = Math.max(1, Math.ceil((wallFt2 + ceilFt2) / 400));
+      out.push(
+        line(
+          "FIN-PRIMER-PVA",
+          primerGal,
+          "measured",
+          `${(wallFt2 + ceilFt2).toFixed(0)} sf of new drywall, 1 coat at 400 sf/gal${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
+      );
+      // Trim paint: baseboard + door casings at ~0.4 sf/lf average, 2 coats, 350 sf/gal.
+      const trimGal = Math.max(1, Math.ceil((wallLf * 0.4 * 2) / 350));
+      out.push(
+        line(
+          "FIN-PAINT-TRIM",
+          trimGal,
+          "derived",
+          `${wallLf.toFixed(0)} lf of trim perimeter at ~0.4 sf/lf, 2 coats / 350 sf per gal`,
+          0.45,
+          stage,
+        ),
+      );
+      // Baseboard: perimeter ≈ wall linear feet.
+      out.push(
+        line(
+          "FIN-BASEBOARD",
+          wallLf,
+          "measured",
+          `${wallLf.toFixed(0)} lf ≈ wall perimeter${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
+      );
+      // Casing: typically 1 tube per 50 lf of trim/casing caulk joint.
+      const caulkTubes = Math.max(1, Math.ceil(wallLf / 50));
+      out.push(
+        line(
+          "FIN-CAULK",
+          caulkTubes,
+          "derived",
+          `${wallLf.toFixed(0)} lf of trim and casing perimeter / 50 lf per tube`,
+          0.5,
+          stage,
+        ),
+      );
+      // LVP: floor area + 10% waste.
+      const lvpSf = Math.ceil(floorFt2 * 1.1);
+      out.push(
+        line(
+          "FIN-LVP",
+          lvpSf,
+          "measured",
+          `${floorFt2.toFixed(0)} sf of floor + 10% waste${scaleNote}`,
+          conf * 0.8,
+          stage,
+        ),
       );
       break;
     }
+
     default:
       break;
   }
@@ -432,8 +625,6 @@ export function partFromDetection(
 ): PartLine | null {
   return line(sku, quantity, "detected", derivation, confidence, stage);
 }
-
-export const CATALOG_SKUS = Object.keys(CATALOG);
 
 /**
  * Rolls every stage's lines into one list. Same SKU at the same stage is summed;
@@ -475,10 +666,4 @@ export function cumulativeParts(perStage: { stage: StageId; parts: PartLine[] }[
 
 export function partsSubtotal(parts: PartLine[]): number {
   return parts.reduce((a, p) => a + (p.unitCostUsd ?? 0) * p.quantity, 0);
-}
-
-/** SKUs a stage is expected to produce — used to prompt the vision model. */
-export function expectedSkusForStage(stage: StageId): CatalogEntry[] {
-  const cats = new Set<PartCategory>(stageDef(stage).expects);
-  return Object.values(CATALOG).filter((e) => cats.has(e.category));
 }

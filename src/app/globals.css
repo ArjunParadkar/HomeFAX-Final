@@ -2,43 +2,69 @@
 
 /*
  * HomeFAX — a permanent record of how a house was built.
- * Warm paper, engineering type, one hot accent. Everything sized for a phone
- * held one-handed on a job site: large tap targets, high contrast, no hairlines.
+ *
+ * Design thesis: "the permit card and the grade stamp".
+ * Two material registers, never mixed:
+ *   PAPER   (cream)  the record itself — set like the inspection card stapled
+ *                    to a stud by the door: ruled boxes, mono field labels
+ *                    over the value, an id in every corner.
+ *   PLATE   (onyx)   the instrument surfaces — the 3D viewer, the loaders, the
+ *                    hero, the key gate. Dark, dense, one lit accent.
+ *
+ * Brand kit (HomeFax Brand.dc.html): onyx #16130F, cream #F4EDDF,
+ * claude #D97757, burnt #A8431D. Space Grotesk wordmark, JetBrains Mono
+ * captions and every figure. Everything sized for a phone held one-handed on a
+ * job site: large tap targets, high contrast, no hairlines.
  */
 
 :root {
-  --paper: #f6f2ec;
-  --surface: #ffffff;
-  --surface-2: #efe9e0;
-  --ink: #191512;
-  --ink-2: #635a50;
-  --ink-3: #928779;
-  --line: #ded6ca;
-  --accent: #b4441f;
-  --accent-soft: #f5e3dc;
-  --accent-ink: #ffffff;
+  /* Fixed brand constants — identical in both themes. */
+  --onyx: #16130f;
+  --cream: #f4eddf;
+  --cream-2: #efe6d3;
+  --claude: #d97757;
+  --burnt: #a8431d;
 
+  --paper: #f4eddf;
+  --surface: #fbf6ea;
+  --surface-2: #efe6d3;
+  --ink: #16130f;
+  --ink-2: #6e6353;
+  /* Darkened from the kit's #8a7c68: every label in this app is 10px mono, and
+     the kit value lands at 3.7:1 on paper. This clears 4.5:1. */
+  --ink-3: #7a6c58;
+  --line: #d8ccb4;
+  --accent: #a8431d;
+  --accent-soft: #f0ddd0;
+  --accent-ink: #f4eddf;
+
+  /* Grade colours carry small mono text (status marks, severity chips), so the
+     mid-scale values are pulled down to clear 4.5:1 on paper. */
   --grade-a: #2f7d4f;
-  --grade-b: #5b8a36;
-  --grade-c: #b0821f;
-  --grade-d: #c2611e;
+  --grade-b: #46701f;
+  --grade-c: #8a6412;
+  --grade-d: #9c4a12;
   --grade-f: #a32b1c;
+
+  /* Panels are 14px. Controls are 10px. Nothing else has a radius. */
+  --radius: 14px;
+  --radius-sm: 10px;
 
   --shadow-card: 0 1px 2px rgba(25, 21, 18, 0.05), 0 8px 24px -12px rgba(25, 21, 18, 0.16);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #14110e;
-    --surface: #1d1915;
-    --surface-2: #27211a;
-    --ink: #f4efe6;
-    --ink-2: #b3a696;
-    --ink-3: #7f7466;
-    --line: #332c24;
-    --accent: #e4653b;
+    --paper: #16130f;
+    --surface: #1e1913;
+    --surface-2: #272017;
+    --ink: #f4eddf;
+    --ink-2: #b0a28c;
+    --ink-3: #968771;
+    --line: #3a322a;
+    --accent: #d97757;
     --accent-soft: #3a2018;
-    --accent-ink: #1a120e;
+    --accent-ink: #16130f;
 
     --grade-a: #57b37c;
     --grade-b: #86bd57;
@@ -61,94 +87,277 @@
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
   --color-accent-ink: var(--accent-ink);
-  --font-sans: var(--font-plex-sans);
-  --font-mono: var(--font-plex-mono);
+  --color-onyx: var(--onyx);
+  --color-cream: var(--cream);
+  --color-cream-2: var(--cream-2);
+  --color-claude: var(--claude);
+  --color-burnt: var(--burnt);
+  --font-sans: var(--font-grotesk);
+  --font-mono: var(--font-jbmono);
+  --radius-panel: var(--radius);
 }
 
-html {
-  background: var(--paper);
-  -webkit-tap-highlight-color: transparent;
+@layer base {
+  html {
+    background: var(--paper);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
+    /* Keep content clear of the home indicator on iOS. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Headings are tight; the wordmark is the only wide-tracked sans on the page. */
+  h1, h2, h3 {
+    letter-spacing: -0.018em;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  /* Gloves, sunlight, and keyboards: the focus ring is never invisible. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* The ledger rows open with a mark of our own, not the platform triangle. */
+  summary { list-style: none; cursor: pointer; }
+  summary::-webkit-details-marker { display: none; }
 }
 
-body {
-  background: var(--paper);
-  color: var(--ink);
-  font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
-  /* Keep content clear of the home indicator on iOS. */
-  padding-bottom: env(safe-area-inset-bottom);
+@layer components {
+  /* The one-handed column. Everything lives inside it. */
+  .shell {
+    width: 100%;
+    max-width: 30rem;
+    margin-inline: auto;
+    padding-inline: 1.125rem;
+  }
+
+  /* ------------------------------ paper ------------------------------ */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* A flat sheet: same paper, no lift. Used for nested sections. */
+  .sheet {
+    background: var(--surface-2);
+    border-radius: var(--radius-sm);
+  }
+
+  /* ------------------------------ plate ------------------------------ */
+
+  /*
+   * The instrument surface. It re-points the theme tokens at their dark values
+   * rather than restyling children, so any component dropped inside — the key
+   * gate, a button, a field — comes out correct on onyx in either theme.
+   */
+  .plate {
+    --paper: var(--onyx);
+    --surface: #1e1913;
+    --surface-2: #272017;
+    --ink: var(--cream);
+    --ink-2: #b0a28c;
+    --ink-3: #968771;
+    --line: #3a322a;
+    --accent: var(--claude);
+    --accent-soft: #3a2018;
+    --accent-ink: var(--onyx);
+    --grade-a: #57b37c;
+    --grade-b: #86bd57;
+    --grade-c: #d7ab48;
+    --grade-d: #e08a4a;
+    --grade-f: #e0614c;
+    background: var(--onyx);
+    color: var(--ink);
+    /* In dark mode the page is onyx too — the edge is what makes it a panel. */
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  /* ------------------------------- type ------------------------------- */
+
+  /* Numbers that need to line up: scores, quantities, dimensions. */
+  .tnum {
+    font-family: var(--font-jbmono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  /* Every label, id, and unit in the app. Mono, uppercase, wide. */
+  .label {
+    font-family: var(--font-jbmono), ui-monospace, monospace;
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* The register of the splash caption — used for section eyebrows. */
+  .eyebrow {
+    font-family: var(--font-jbmono), ui-monospace, monospace;
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ------------------------------ fields ------------------------------ */
+
+  /*
+   * The repeating unit of the record: a ruled box with the field name above
+   * the figure, like a box on an inspection card.
+   */
+  .rule-grid {
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+    border-top: 1px solid var(--line);
+  }
+  .field {
+    background: var(--surface);
+    /* Tight inline padding on purpose: three of these have to sit side by side
+       on a 360px phone without the figures wrapping. */
+    padding: 0.625rem 0.75rem 0.75rem;
+    min-width: 0;
+  }
+  .field > dt {
+    font-family: var(--font-jbmono), ui-monospace, monospace;
+    font-size: 0.5625rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .field > dd {
+    font-family: var(--font-jbmono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin-top: 0.1875rem;
+    color: var(--ink);
+    overflow-wrap: anywhere;
+  }
+
+  /* A mono tag: part basis, evidence source, a QC id. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3125rem;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 0.125rem 0.375rem;
+    font-family: var(--font-jbmono), ui-monospace, monospace;
+    font-size: 0.5625rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .chip-accent {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ------------------------------- comb ------------------------------- */
+
+  /*
+   * The tally strip. One tick per item in a fixed set — 50 checkpoints on a
+   * ledger, 11 stages on a record — lit when it is on file, dim when it is
+   * not. The same notation everywhere a fixed set is being counted off.
+   */
+  .comb {
+    display: grid;
+    gap: 2px;
+  }
+  .comb-50 { grid-template-columns: repeat(25, minmax(0, 1fr)); }
+  .comb-11 { grid-template-columns: repeat(11, minmax(0, 1fr)); }
+  .tick {
+    height: 0.75rem;
+    border-radius: 1px;
+    background: var(--line);
+  }
+
+  /* ------------------------------ controls ---------------------------- */
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3.25rem;
+    padding-inline: 1.25rem;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: 0.9375rem;
+    letter-spacing: -0.01em;
+    transition: transform 0.12s ease, opacity 0.12s ease;
+  }
+  .btn:active {
+    transform: scale(0.985);
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+  }
+
+  .input {
+    width: 100%;
+    /* A field edge is an interactive boundary, not a divider: it has to clear
+       3:1 against the paper behind it. --line does not; --ink-3 does. */
+    border: 1px solid var(--ink-3);
+    border-radius: var(--radius-sm);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 0.875rem 1rem;
+    font-size: 1rem;
+    outline: none;
+  }
+  .input::placeholder { color: var(--ink-3); }
+  .input:focus { border-color: var(--accent); }
+  /* On onyx, paper-coloured fields would vanish — sit them a step above it. */
+  .plate .input { background: var(--surface-2); }
+
+  /* The stage rail running down the record page. */
+  .rail::before {
+    content: "";
+    position: absolute;
+    left: 1.09375rem;
+    top: 2.25rem;
+    bottom: -0.25rem;
+    width: 2px;
+    background: var(--line);
+  }
+  .rail:last-child::before {
+    display: none;
+  }
 }
 
-/* The one-handed column. Everything lives inside it. */
-.shell {
-  width: 100%;
-  max-width: 30rem;
-  margin-inline: auto;
-  padding-inline: 1.125rem;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 1rem;
-  box-shadow: var(--shadow-card);
-}
-
-/* Numbers that need to line up: scores, quantities, dimensions. */
-.tnum {
-  font-family: var(--font-plex-mono), ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-.label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-height: 3rem;
-  padding-inline: 1.25rem;
-  border-radius: 0.75rem;
-  font-weight: 600;
-  font-size: 0.9375rem;
-  transition: transform 0.12s ease, opacity 0.12s ease;
-}
-.btn:active {
-  transform: scale(0.985);
-}
-.btn-primary {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.btn-secondary {
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
-.btn:disabled {
-  opacity: 0.5;
-}
-
-/* The stage rail running down the record page. */
-.rail::before {
-  content: "";
-  position: absolute;
-  left: 1.09375rem;
-  top: 2.25rem;
-  bottom: -0.25rem;
-  width: 2px;
-  background: var(--line);
-}
-.rail:last-child::before {
-  display: none;
-}
+/* --------------------------- motion --------------------------- */
 
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
@@ -172,6 +381,18 @@ body {
   animation: sweep 1.5s ease-in-out infinite;
 }
 
+/* Brand-kit loader (frame 2a): the sliding fill and the pulsing caption. */
+@keyframes hf-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+@keyframes hf-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+.hf-slide { animation: hf-slide 1.6s ease-in-out infinite; }
+.hf-pulse { animation: hf-pulse 1.6s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  .pulsing, .sweeping::after { animation: none; }
+  .pulsing, .sweeping::after, .hf-slide, .hf-pulse { animation: none; }
 }
