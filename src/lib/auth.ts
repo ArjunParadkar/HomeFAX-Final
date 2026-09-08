@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync, timingSafeEqual as tsEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual as tsEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
 /**
@@ -42,6 +42,39 @@ export function verifyPassword(password: string, stored: string): boolean {
   } catch {
     return false;
   }
+}
+
+/* ---------------------------- password resets --------------------------- */
+
+/** How long a reset link stays good. Short on purpose — it is handed over, not mailed. */
+export const RESET_TOKEN_MINUTES = 60;
+
+/** A fresh reset token and the hash that is the only thing the store keeps. */
+export function mintResetToken(): { token: string; tokenHash: string } {
+  const token = randomBytes(24).toString("base64url");
+  return { token, tokenHash: hashResetToken(token) };
+}
+
+export function hashResetToken(token: string): string {
+  return createHash("sha256").update(token.trim()).digest("hex");
+}
+
+/** Short-lived cookie that carries a freshly issued reset link back to /team, shown once. */
+export const RESET_LINK_COOKIE = "hfx_reset_link";
+
+export type IssuedResetLink = {
+  membershipId: string;
+  userName: string;
+  link: string;
+  expiresAt: string;
+};
+
+/** Minimum the app accepts anywhere a password is set. */
+export const PASSWORD_MIN = 8;
+
+export function passwordProblem(password: string): string | null {
+  if (password.length < PASSWORD_MIN) return `Password must be at least ${PASSWORD_MIN} characters`;
+  return null;
 }
 
 /* ------------------------------- sessions ------------------------------- */

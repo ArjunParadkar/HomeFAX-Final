@@ -1,9 +1,9 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { promises as fs } from "node:fs";
 import { cookies } from "next/headers";
 import { nanoid } from "nanoid";
 import path from "node:path";
-import { currentUserId, mintHfxKey } from "./auth";
+import { RESET_TOKEN_MINUTES, currentUserId, hashResetToken, mintHfxKey, mintResetToken } from "./auth";
 import { dbConfigured, getDb, schema } from "./db";
 import { getDataFile, listRecordsForOrg } from "./store";
 import type { StageId } from "./types";
@@ -95,6 +95,16 @@ export type Hire = {
   createdAt: string;
 };
 
+export type PasswordReset = {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  issuedByUserId: string | null;
+  expiresAt: string;
+  usedAt: string | null;
+  createdAt: string;
+};
+
 /* ---------------------------- file backend shape ------------------------- */
 
 type AccountsFileShape = {
@@ -108,6 +118,7 @@ type AccountsFileShape = {
   projectAccess: ProjectAccess[];
   assignments: Assignment[];
   hires: Hire[];
+  passwordResets: PasswordReset[];
 };
 
 async function readAccountsFile(): Promise<AccountsFileShape> {
@@ -124,6 +135,7 @@ async function readAccountsFile(): Promise<AccountsFileShape> {
       projectAccess: (parsed.projectAccess ?? []) as ProjectAccess[],
       assignments: (parsed.assignments ?? []) as Assignment[],
       hires: (parsed.hires ?? []) as Hire[],
+      passwordResets: (parsed.passwordResets ?? []) as PasswordReset[],
     };
   } catch {
     return {
@@ -133,6 +145,7 @@ async function readAccountsFile(): Promise<AccountsFileShape> {
       projectAccess: [],
       assignments: [],
       hires: [],
+      passwordResets: [],
     };
   }
 }
@@ -254,6 +267,18 @@ function hireFromRow(r: typeof schema.hires.$inferSelect): Hire {
     note: r.note,
     status: r.status,
     createdByUserId: r.createdByUserId,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+function passwordResetFromRow(r: typeof schema.passwordResets.$inferSelect): PasswordReset {
+  return {
+    id: r.id,
+    userId: r.userId,
+    tokenHash: r.tokenHash,
+    issuedByUserId: r.issuedByUserId,
+    expiresAt: r.expiresAt.toISOString(),
+    usedAt: r.usedAt ? r.usedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   };
 }
@@ -427,6 +452,107 @@ export async function updateUser(
     if (clash) throw new Error("That handle is taken");
   }
   d.users[idx] = { ...d.users[idx], ...patch };
+  await writeAccountsFile(d);
+}
+
+/** Replace a user's password hash. Callers verify whatever needs verifying first. */
+export async function setPasswordHash(userId: string, passwordHash: string): Promise<void> {
+  if (isPostgres()) {
+    const db = getDb();
+    await db.update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId));
+    return;
+  }
+  const d = await readAccountsFile();
+  const idx = d.users.findIndex((u) => u.id === userId);
+  if (idx < 0) return;
+  d.users[idx] = { ...d.users[idx], passwordHash };
+  await writeAccountsFile(d);
+}
+
+/* ---------------------------- password resets --------------------------- */
+
+/**
+ * Issue a one-time reset for a user. Any earlier unused reset for the same
+ * person is retired so exactly one link is live at a time. Returns the token
+ * (goes in the link) and when it expires; the store keeps only the hash.
+ */
+export async function createPasswordReset(input: {
+  userId: string;
+  issuedByUserId?: string | null;
+  ttlMinutes?: number;
+}): Promise<{ token: string; expiresAt: string }> {
+  const user = await getUser(input.userId);
+  if (!user) throw new Error("User not found");
+  const { token, tokenHash } = mintResetToken();
+  const ttl = input.ttlMinutes ?? RESET_TOKEN_MINUTES;
+  const expiresAt = new Date(Date.now() + ttl * 60_000);
+  const row: PasswordReset = {
+    id: nanoid(12),
+    userId: input.userId,
+    tokenHash,
+    issuedByUserId: input.issuedByUserId ?? null,
+    expiresAt: expiresAt.toISOString(),
+    usedAt: null,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (isPostgres()) {
+    const db = getDb();
+    await db
+      .delete(schema.passwordResets)
+      .where(and(eq(schema.passwordResets.userId, input.userId), isNull(schema.passwordResets.usedAt)));
+    await db.insert(schema.passwordResets).values({
+      id: row.id,
+      userId: row.userId,
+      tokenHash: row.tokenHash,
+      issuedByUserId: row.issuedByUserId,
+      expiresAt,
+      usedAt: null,
+    });
+    return { token, expiresAt: row.expiresAt };
+  }
+  const d = await readAccountsFile();
+  d.passwordResets = d.passwordResets.filter((r) => !(r.userId === input.userId && !r.usedAt));
+  d.passwordResets.push(row);
+  await writeAccountsFile(d);
+  return { token, expiresAt: row.expiresAt };
+}
+
+/** The live reset behind a token, with its user — null if unknown, used, or expired. */
+export async function findPasswordReset(
+  token: string,
+): Promise<{ reset: PasswordReset; user: User } | null> {
+  const tokenHash = hashResetToken(token);
+  let reset: PasswordReset | null = null;
+  if (isPostgres()) {
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(schema.passwordResets)
+      .where(eq(schema.passwordResets.tokenHash, tokenHash))
+      .limit(1);
+    reset = rows[0] ? passwordResetFromRow(rows[0]) : null;
+  } else {
+    const d = await readAccountsFile();
+    reset = d.passwordResets.find((r) => r.tokenHash === tokenHash) ?? null;
+  }
+  if (!reset || reset.usedAt || Date.parse(reset.expiresAt) < Date.now()) return null;
+  const user = await getUser(reset.userId);
+  return user ? { reset, user } : null;
+}
+
+/** Burn a reset so the link cannot be used twice. */
+export async function markPasswordResetUsed(id: string): Promise<void> {
+  const usedAt = new Date();
+  if (isPostgres()) {
+    const db = getDb();
+    await db.update(schema.passwordResets).set({ usedAt }).where(eq(schema.passwordResets.id, id));
+    return;
+  }
+  const d = await readAccountsFile();
+  const idx = d.passwordResets.findIndex((r) => r.id === id);
+  if (idx < 0) return;
+  d.passwordResets[idx] = { ...d.passwordResets[idx], usedAt: usedAt.toISOString() };
   await writeAccountsFile(d);
 }
 

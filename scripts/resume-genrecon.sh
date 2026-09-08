@@ -31,7 +31,7 @@ RP="${RUNPOD_API_KEY:?RUNPOD_API_KEY missing from .env.local}"
 KEY="${RECON_KEY:?RECON_KEY missing from .env.local}"
 BASE="https://$POD-8000.proxy.runpod.net"
 LOGURL="https://hvd0xzjehdzr7owv.public.blob.vercel-storage.com/podlogs/genrecon-provision.log"
-FRAMES_JSON="${FRAMES_JSON:-/home/god/homefax-final/scripts/testset_urls.json}"
+FRAMES_JSON="${FRAMES_JSON:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/testset_urls.json}"
 
 say() { printf '\n=== %s [%s]\n' "$1" "$(date -u +%H:%M:%S)"; }
 

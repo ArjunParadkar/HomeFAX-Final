@@ -8,6 +8,13 @@
       "when": 1788229074197,
       "tag": "0000_curvy_smiling_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788903734952,
+      "tag": "0001_password_resets",
+      "breakpoints": true
     }
   ]
 }

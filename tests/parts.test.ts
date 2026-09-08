@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { CATALOG, CATALOG_SKUS, expectedSkusForStage } from "../src/lib/catalog";
 import { ExactDetection, buildPartsIdPrompt, detectionToPartLine } from "../src/lib/parts-id";
 import { cumulativeParts, partFromDetection, takeoffFromGeometry } from "../src/lib/parts";
-import type { PartLine, ReconResult, StageId } from "../src/lib/types";
+import type { PartLine, ReconResult } from "../src/lib/types";
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 

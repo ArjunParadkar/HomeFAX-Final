@@ -110,6 +110,10 @@ export default async function Home({ searchParams }: PageProps<"/">) {
                   autoComplete="current-password"
                   className="input mt-1.5"
                 />
+                <p className="mt-2 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+                  Forgot it? Your company&apos;s owner or admin can issue a one-time reset link
+                  from their Team page.
+                </p>
               </div>
               <ErrorLine message={sp.error} />
               <button type="submit" className="btn btn-primary w-full">

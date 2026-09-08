@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { after, before, test } from "node:test";
+import { after, test } from "node:test";
 
 // Point at a throw-away directory before any accounts/store code evaluates
 // process.cwd(). Both modules compute their file path lazily via getDataFile(),
@@ -28,22 +28,22 @@ import {
   createAssignment,
   createHire,
   createOrg,
+  createPasswordReset,
   createUser,
-  getOrg,
+  findPasswordReset,
   getUser,
-  getUserByEmail,
-  getUserByHandle,
+  markPasswordResetUsed,
+  setPasswordHash,
   grantProjectAccess,
   listAssignmentsForRecord,
   listIncomingHires,
   listMembers,
-  listOrgsForUser,
   listPublicProfiles,
   updateOrg,
   updateUser,
 } from "../src/lib/accounts";
 import { createRecord } from "../src/lib/store";
-import { hashPassword } from "../src/lib/auth";
+import { hashPassword, hashResetToken, verifyPassword } from "../src/lib/auth";
 
 after(() => {
   process.chdir(originalCwd);
@@ -268,4 +268,50 @@ test("listPublicProfiles never leaks email, passwordHash, or hfxKey", async () =
   // Confirm non-public users/orgs are absent
   const nonPublicUser = await makeUser();
   assert.ok(!users.some((u) => u.id === nonPublicUser.id), "non-public user must not appear");
+});
+
+/* ---------------------------- password resets --------------------------- */
+
+test("a reset link is single-use, hashed at rest, and signs the new password in", async () => {
+  const user = await createUser({
+    email: uniqueEmail(),
+    passwordHash: hashPassword("old-password-1"),
+    name: "Reset Person",
+    handle: uniqueHandle(),
+  });
+
+  const { token, expiresAt } = await createPasswordReset({ userId: user.id, issuedByUserId: null });
+  assert.ok(Date.parse(expiresAt) > Date.now() + 50 * 60_000, "expires roughly an hour out");
+
+  const found = await findPasswordReset(token);
+  assert.ok(found, "fresh token resolves");
+  assert.equal(found.user.id, user.id);
+  assert.equal(found.reset.tokenHash, hashResetToken(token), "store keeps only the hash");
+  assert.notEqual(found.reset.tokenHash, token);
+
+  await setPasswordHash(user.id, hashPassword("new-password-2"));
+  await markPasswordResetUsed(found.reset.id);
+
+  const after = await getUser(user.id);
+  assert.ok(after && verifyPassword("new-password-2", after.passwordHash));
+  assert.ok(after && !verifyPassword("old-password-1", after.passwordHash));
+  assert.equal(await findPasswordReset(token), null, "used token is dead");
+  assert.equal(await findPasswordReset("not-a-token"), null);
+});
+
+test("an expired reset is dead and a new issue retires the earlier one", async () => {
+  const user = await createUser({
+    email: uniqueEmail(),
+    passwordHash: hashPassword("password-xyz"),
+    name: "Expiry Person",
+    handle: uniqueHandle(),
+  });
+
+  const expired = await createPasswordReset({ userId: user.id, ttlMinutes: -1 });
+  assert.equal(await findPasswordReset(expired.token), null, "already past expiry");
+
+  const first = await createPasswordReset({ userId: user.id });
+  const second = await createPasswordReset({ userId: user.id });
+  assert.equal(await findPasswordReset(first.token), null, "superseded link no longer works");
+  assert.ok(await findPasswordReset(second.token), "latest link works");
 });

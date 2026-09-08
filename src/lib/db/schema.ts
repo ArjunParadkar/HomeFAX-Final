@@ -86,6 +86,28 @@ export const memberships = homefax.table(
   (t) => [uniqueIndex("memberships_org_user_idx").on(t.orgId, t.userId)],
 );
 
+/**
+ * A one-time password reset. Only the SHA-256 of the token is stored; the
+ * token itself lives in the link handed to the person. Used or expired rows
+ * are inert — a new issue for the same user retires the earlier ones.
+ */
+export const passwordResets = homefax.table(
+  "password_resets",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    /** Owner/admin who issued it; null when issued from the operator script. */
+    issuedByUserId: text("issued_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("password_resets_token_hash_idx").on(t.tokenHash)],
+);
+
 /** A company granted access to a record — the project team, incl. the owner org. */
 export const projectAccess = homefax.table(
   "project_access",

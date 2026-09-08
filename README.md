@@ -61,11 +61,26 @@ a simulated reconstruction — clearly labelled as simulated everywhere it shows
 
 | Variable | Effect when absent |
 |---|---|
-| `ACCESS_KEYS` | No one can sign in. Format: `secret:Label,secret2:Label2` |
+| `AUTH_SECRET` | Sessions are signed with a dev fallback; production refuses to start without it |
+| `ACCESS_KEYS` | Companies cannot claim records made under the old key gate. Format: `secret:Label,secret2:Label2` |
 | `DATABASE_URL` | Falls back to a JSON file under `.data/` |
 | `BLOB_READ_WRITE_TOKEN` | Frames stay on the device; runs are simulated |
 | `RUNPOD_API_KEY`, `RUNPOD_ENDPOINT_ID` | Reconstruction is simulated |
 | `ANTHROPIC_API_KEY` | Workmanship and compliance are not graded |
+
+## Accounts and passwords
+
+Sign-ins are real accounts (scrypt password, signed session cookie). There is no
+mail provider, so password recovery is handed over rather than emailed:
+
+- **Change password** — on `/profile`, with the current password.
+- **Reset link** — a company owner or admin issues a one-time link for a member
+  from `/team` (only the owner can issue one for an admin). The link opens
+  `/reset`, sets the new password once, signs the person in, and dies. Links
+  expire after an hour; issuing a new one retires the old one.
+- **Owner recovery** — the UI never resets an owner. Run
+  `DATABASE_URL=… npx tsx scripts/issue-reset-link.ts owner@example.com` and
+  hand over the printed link.
 
 ## Layout
 

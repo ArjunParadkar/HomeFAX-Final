@@ -2,10 +2,12 @@ import { redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import ErrorLine from "@/components/ErrorLine";
 import {
+  changePasswordAction,
   createCompanyAction,
   signOutAction,
   updateProfileAction,
 } from "@/app/account/actions";
+import { PASSWORD_MIN } from "@/lib/auth";
 import { currentUser, getMembership, listOrgsForUser } from "@/lib/accounts";
 
 /**
@@ -48,6 +50,11 @@ export default async function ProfilePage({
 
       <main className="shell flex-1 space-y-6 py-5">
         <ErrorLine message={sp.error} />
+        {sp.ok === "password" && (
+          <p role="status" className="text-[0.8125rem] leading-relaxed" style={{ color: "var(--claude)" }}>
+            Password changed. Other devices stay signed in until their sessions expire.
+          </p>
+        )}
 
         <section className="card overflow-hidden">
           <div className="border-b border-[var(--line)] px-4 py-3">
@@ -185,6 +192,62 @@ export default async function ProfilePage({
             <button type="submit" className="btn btn-secondary w-full">
               Register company
             </button>
+          </form>
+        </section>
+
+        <section className="card overflow-hidden">
+          <div className="border-b border-[var(--line)] px-4 py-3">
+            <h2 className="eyebrow">Password</h2>
+          </div>
+          <form action={changePasswordAction} className="space-y-3.5 px-4 py-4">
+            <div>
+              <label className="label block" htmlFor="current-password">
+                Current password
+              </label>
+              <input
+                id="current-password"
+                name="currentPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+                className="input mt-1.5"
+              />
+            </div>
+            <div>
+              <label className="label block" htmlFor="new-password">
+                New password
+              </label>
+              <input
+                id="new-password"
+                name="password"
+                type="password"
+                required
+                minLength={PASSWORD_MIN}
+                autoComplete="new-password"
+                className="input mt-1.5"
+              />
+            </div>
+            <div>
+              <label className="label block" htmlFor="confirm-password">
+                New password again
+              </label>
+              <input
+                id="confirm-password"
+                name="confirm"
+                type="password"
+                required
+                minLength={PASSWORD_MIN}
+                autoComplete="new-password"
+                className="input mt-1.5"
+              />
+            </div>
+            <button type="submit" className="btn btn-secondary w-full">
+              Change password
+            </button>
+            <p className="text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+              Forgot it? Your company&apos;s owner or admin can hand you a one-time reset link from
+              their Team page.
+            </p>
           </form>
         </section>
 

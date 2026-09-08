@@ -2,7 +2,7 @@
 
 import { nanoid } from "nanoid";
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   ORG_COOKIE,
@@ -13,29 +13,38 @@ import {
   createAssignment,
   createHire,
   createOrg,
+  createPasswordReset,
   createUser,
+  findPasswordReset,
   getAssignment,
   getHire,
   getMembership,
   getMembershipById,
   getOrgByHfxKey,
+  getUser,
   getUserByEmail,
   getUserByHandle,
   grantProjectAccess,
+  markPasswordResetUsed,
   removeMembership,
   requireUser,
   setAssignmentStatus,
+  setPasswordHash,
   setHireStatus,
   updateOrg,
   updateUser,
 } from "@/lib/accounts";
 import {
+  RESET_LINK_COOKIE,
+  RESET_TOKEN_MINUTES,
   endSession,
   hashPassword,
   mintHfxKey,
+  passwordProblem,
   startSession,
   verifyKey,
   verifyPassword,
+  type IssuedResetLink,
 } from "@/lib/auth";
 import { getRecordById } from "@/lib/store";
 
@@ -77,7 +86,8 @@ export async function signUpAction(formData: FormData): Promise<void> {
 
   if (!name) redirect(`/?mode=signup&error=${err("Name is required")}`);
   if (!email) redirect(`/?mode=signup&error=${err("Email is required")}`);
-  if (password.length < 8) redirect(`/?mode=signup&error=${err("Password must be at least 8 characters")}`);
+  const passwordIssue = passwordProblem(password);
+  if (passwordIssue) redirect(`/?mode=signup&error=${err(passwordIssue)}`);
 
   // Derive handle from name if not supplied
   let handle = rawHandle ? rawHandle.toLowerCase().trim() : slugifyHandle(name);
@@ -145,6 +155,116 @@ export async function signInAction(formData: FormData): Promise<void> {
 export async function signOutAction(): Promise<void> {
   await endSession();
   redirect("/");
+}
+
+/* ------------------------------ passwords -------------------------------- */
+
+/** Fields: currentPassword, password, confirm. Success → /profile?ok=password. Failure → /profile?error=… */
+export async function changePasswordAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const current = String(formData.get("currentPassword") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+
+  if (!verifyPassword(current, user.passwordHash)) {
+    redirect(`/profile?error=${err("Current password is incorrect")}`);
+  }
+  const problem = passwordProblem(password);
+  if (problem) redirect(`/profile?error=${err(problem)}`);
+  if (password !== confirm) redirect(`/profile?error=${err("The two new passwords do not match")}`);
+
+  await setPasswordHash(user.id, hashPassword(password));
+  revalidatePath("/profile");
+  redirect("/profile?ok=password");
+}
+
+async function originFromRequest(): Promise<string> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+/**
+ * Fields: membershipId. An owner or admin of the company issues a one-time
+ * reset link for that member (never for the owner — the owner recovers via the
+ * operator script). The link is shown once on /team and never stored in clear.
+ * Success → /team. Failure → /team?error=…
+ */
+export async function issueResetLinkAction(formData: FormData): Promise<void> {
+  const user = await requireUser();
+  const membershipId = String(formData.get("membershipId") ?? "").trim();
+
+  const target = await getMembershipById(membershipId);
+  if (!target) redirect(`/team?error=${err("Membership not found")}`);
+  if (target!.role === "owner") {
+    redirect(`/team?error=${err("The owner's password cannot be reset from here")}`);
+  }
+  const callerMembership = await getMembership(target!.orgId, user.id);
+  if (!callerMembership || callerMembership.role === "member") {
+    redirect(`/team?error=${err("Only owners and admins can issue reset links")}`);
+  }
+  if (target!.role === "admin" && callerMembership!.role !== "owner") {
+    redirect(`/team?error=${err("Only the owner can reset an admin's password")}`);
+  }
+
+  let issued: IssuedResetLink | null = null;
+  let issueError: string | null = null;
+  try {
+    const targetUser = await getUser(target!.userId);
+    if (!targetUser) throw new Error("User not found");
+    const { token, expiresAt } = await createPasswordReset({
+      userId: targetUser.id,
+      issuedByUserId: user.id,
+    });
+    const origin = await originFromRequest();
+    issued = {
+      membershipId,
+      userName: targetUser.name,
+      link: `${origin}/reset?token=${encodeURIComponent(token)}`,
+      expiresAt,
+    };
+  } catch (e) {
+    issueError = e instanceof Error ? e.message : "Could not issue a reset link";
+  }
+  if (issueError || !issued) redirect(`/team?error=${err(issueError ?? "Could not issue a reset link")}`);
+
+  const jar = await cookies();
+  jar.set(RESET_LINK_COOKIE, JSON.stringify(issued), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/team",
+    maxAge: RESET_TOKEN_MINUTES * 60,
+  });
+  revalidatePath("/team");
+  redirect("/team");
+}
+
+/** No fields. Clears the shown reset link from /team (the link itself stays valid until it expires or is used). */
+export async function dismissResetLinkAction(): Promise<void> {
+  const jar = await cookies();
+  jar.set(RESET_LINK_COOKIE, "", { path: "/team", maxAge: 0 });
+  redirect("/team");
+}
+
+/** Fields: token, password, confirm. Sets the password, burns the token, signs the person in. Success → /records. Failure → /reset?token=…&error=… */
+export async function resetPasswordAction(formData: FormData): Promise<void> {
+  const token = String(formData.get("token") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+  const back = (msg: string) => `/reset?token=${encodeURIComponent(token)}&error=${err(msg)}`;
+
+  const found = await findPasswordReset(token);
+  if (!found) redirect(`/reset?error=${err("This reset link is not valid or has expired")}`);
+  const problem = passwordProblem(password);
+  if (problem) redirect(back(problem));
+  if (password !== confirm) redirect(back("The two passwords do not match"));
+
+  await setPasswordHash(found!.user.id, hashPassword(password));
+  await markPasswordResetUsed(found!.reset.id);
+  await startSession(found!.user.id);
+  redirect("/records");
 }
 
 /* ------------------------------- profile --------------------------------- */

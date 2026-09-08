@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import ErrorLine from "@/components/ErrorLine";
@@ -5,11 +6,27 @@ import {
   addMemberAction,
   claimLegacyKeyAction,
   createCompanyAction,
+  dismissResetLinkAction,
+  issueResetLinkAction,
   regenerateHfxKeyAction,
   removeMemberAction,
   updateCompanyAction,
 } from "@/app/account/actions";
 import { activeOrg, currentUser, getMembership, listMembers } from "@/lib/accounts";
+import { RESET_LINK_COOKIE, type IssuedResetLink } from "@/lib/auth";
+
+/** The reset link just issued on this device, if any — shown once, then dismissed. */
+async function issuedResetLink(): Promise<IssuedResetLink | null> {
+  const raw = (await cookies()).get(RESET_LINK_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as IssuedResetLink;
+    if (!parsed.link || Date.parse(parsed.expiresAt) < Date.now()) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The company: who is in it, what it says about itself, and the one string
@@ -87,6 +104,8 @@ export default async function TeamPage({
   const membership = await getMembership(org.id, user.id);
   const canManage = membership?.role === "owner" || membership?.role === "admin";
   const members = await listMembers(org.id);
+  const issued = canManage ? await issuedResetLink() : null;
+  const issuedFor = issued ? members.find((m) => m.membership.id === issued.membershipId) : null;
 
   return (
     <>
@@ -100,6 +119,37 @@ export default async function TeamPage({
 
       <main className="shell flex-1 space-y-6 py-5">
         <ErrorLine message={sp.error} />
+
+        {issued && issuedFor && (
+          <section className="plate overflow-hidden">
+            <div className="border-b border-[var(--line)] px-5 py-3">
+              <h2 className="eyebrow">Password reset link</h2>
+            </div>
+            <div className="px-5 py-4">
+              <label className="label block" htmlFor="reset-link">
+                For {issuedFor.user.name} · expires{" "}
+                {new Date(issued.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+              </label>
+              <input
+                id="reset-link"
+                readOnly
+                value={issued.link}
+                className="input tnum mt-1.5"
+                style={{ color: "var(--claude)" }}
+              />
+              <p className="label mt-2">Press and hold to copy</p>
+              <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
+                Hand this to them directly. It sets a new password once, signs them in, and then
+                stops working. Issuing another link retires this one.
+              </p>
+            </div>
+            <form action={dismissResetLinkAction} className="border-t border-[var(--line)] px-5 py-4">
+              <button type="submit" className="btn btn-secondary w-full">
+                Done, hide the link
+              </button>
+            </form>
+          </section>
+        )}
 
         <section className="card overflow-hidden">
           <div className="border-b border-[var(--line)] px-4 py-3">
@@ -235,6 +285,14 @@ export default async function TeamPage({
                   <span className={`chip shrink-0 ${m.role === "owner" ? "chip-accent" : ""}`}>
                     {ROLE_WORD[m.role]}
                   </span>
+                  {canManage && m.role !== "owner" && (m.role === "member" || membership?.role === "owner") && (
+                    <form action={issueResetLinkAction} className="shrink-0">
+                      <input type="hidden" name="membershipId" value={m.id} />
+                      <button type="submit" className="chip min-h-[2.75rem] px-3">
+                        Reset link
+                      </button>
+                    </form>
+                  )}
                   {canManage && m.role !== "owner" && (
                     <form action={removeMemberAction} className="shrink-0">
                       <input type="hidden" name="membershipId" value={m.id} />
