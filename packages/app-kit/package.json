@@ -1,0 +1,12 @@
+{
+  "name": "@homefax/app-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Next.js glue shared by the HomeFAX apps: session cookie → principal, actor transactions, form-action conventions, property view logging.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": { "@homefax/auth": "*", "@homefax/db": "*" },
+  "peerDependencies": { "next": "*", "react": "*" },
+  "devDependencies": { "typescript": "^5", "@types/node": "^20", "@types/react": "^19" }
+}

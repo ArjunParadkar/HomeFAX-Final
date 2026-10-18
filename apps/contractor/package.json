@@ -11,6 +11,7 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "@homefax/app-kit": "*",
     "@homefax/auth": "*",
     "@homefax/core": "*",
     "@homefax/db": "*",
