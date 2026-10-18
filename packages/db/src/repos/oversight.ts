@@ -363,7 +363,7 @@ export async function listPermitsForProperty(tx: Tx, propertyId: string): Promis
 }
 export async function createPermit(
   tx: Tx,
-  input: { propertyId: string; municipalityOrgId: string; recordId?: string | null; permitNo: string; kind: Permit["kind"]; status?: Permit["status"]; appliedAt?: string | null; issuedAt?: string | null; notes?: string | null; createdBy: string; orgName?: string },
+  input: { propertyId: string; municipalityOrgId: string; recordId?: string | null; permitNo: string; kind: Permit["kind"]; status?: Permit["status"]; appliedAt?: string | null; issuedAt?: string | null; closedAt?: string | null; notes?: string | null; createdBy: string; orgName?: string },
 ): Promise<Permit> {
   const permitNo = input.permitNo.trim();
   if (!permitNo) throw new Error("Permit number is required");
@@ -379,6 +379,7 @@ export async function createPermit(
       status: input.status ?? "applied",
       appliedAt: input.appliedAt ?? null,
       issuedAt: input.issuedAt ?? null,
+      closedAt: input.closedAt ?? null,
       notes: input.notes?.trim() || null,
       createdBy: input.createdBy,
     })

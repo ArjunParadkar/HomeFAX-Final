@@ -432,3 +432,18 @@ export async function emailsFor(tx: Tx, identityIds: string[]): Promise<Map<stri
   const rows = await tx.select({ id: identities.id, email: identities.email }).from(identities).where(inArray(identities.id, [...new Set(identityIds)]));
   return new Map(rows.map((r) => [r.id, r.email]));
 }
+
+/**
+ * Service: a company claims the records its pre-accounts access key created.
+ * Sets the owning org and seats it on the project team. Returns how many.
+ */
+export async function claimLegacyRecords(tx: Tx, orgId: string, legacyKeyId: string): Promise<number> {
+  const rows = await tx
+    .update(records)
+    .set({ orgId })
+    .where(and(eq(records.legacyKeyId, legacyKeyId), isNull(records.orgId)))
+    .returning({ id: records.id });
+  for (const r of rows) await grantRecordAccess(tx, { recordId: r.id, orgId, role: "owner" });
+  await tx.update(organizations).set({ legacyKeyId }).where(eq(organizations.id, orgId));
+  return rows.length;
+}

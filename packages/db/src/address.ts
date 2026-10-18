@@ -20,14 +20,25 @@ export function isUsState(s: string): boolean {
   return STATES.has(s.toUpperCase());
 }
 
-/** Title Case for street and city names, keeping ordinals and numbers alone. */
+const DIRECTIONALS = new Set(["N", "S", "E", "W", "NE", "NW", "SE", "SW"]);
+
+/**
+ * Title Case for street and city names. Directionals stay upper (NW 3rd St),
+ * ordinals keep a lowercase suffix (3rd, 21st), unit markers keep their case.
+ */
 export function titleCase(s: string): string {
   return s
-    .toLowerCase()
+    .trim()
     .split(/\s+/)
-    .map((w) => (/^\d/.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
-    .join(" ")
-    .trim();
+    .map((w) => {
+      const u = w.toUpperCase();
+      if (DIRECTIONALS.has(u)) return u;
+      if (/^\d+(st|nd|rd|th)$/i.test(w)) return w.toLowerCase();
+      if (/^\d/.test(w)) return u;
+      if (/^[A-Z]$/i.test(w)) return u; // "J St"
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    })
+    .join(" ");
 }
 
 export function normalizeAddress(p: AddressParts): Required<Omit<AddressParts, "line2" | "county">> & { line2: string | null; county: string | null } {
