@@ -1,19 +1,12 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
-import { ErrorLine } from "@homefax/ui";
-import { StatStrip } from "@homefax/ui";
-import { createCompanyAction, setActiveOrgAction } from "@/app/account/actions";
-import {
-  activeOrg,
-  currentUser,
-  listAssignmentsForOrg,
-  listAssignmentsForUser,
-  listOrgsForUser,
-  type Assignment,
-} from "@/lib/accounts";
+import { ErrorLine, StatStrip } from "@homefax/ui";
 import { STAGES, stageDef } from "@homefax/core";
-import { getRecordById, listCaptures, listRecordsForOrg, type RecordRow } from "@/lib/store";
+import { properties, records, type Assignment, type BuildRecord, type Property } from "@homefax/db";
+import { createCompanyAction, setActiveOrgAction } from "@/app/account/actions";
+import { cityLineOf, streetOf } from "@/lib/address";
+import { kit } from "@/lib/kit";
+import { orgContext } from "@/lib/session";
 import { createRecordAction } from "./actions";
 
 /**
@@ -21,101 +14,68 @@ import { createRecordAction } from "./actions";
  * personally owes someone this week, and the one form that opens a new record.
  *
  * The strip at the top counts things that exist, not things that were
- * computed: properties, stages filmed, ledger points passed, open tasks.
+ * computed: properties, stages filmed, ledger points passed, open tasks. They
+ * come straight from each house's stats row.
  */
 
 export const dynamic = "force-dynamic";
 
-const IN_FLIGHT = new Set([
-  "queued",
-  "extracting",
-  "registering",
-  "reconstructing",
-  "meshing",
-  "analyzing",
-]);
-
-type TickState = "done" | "working" | "open";
+type TickState = records.StageStatus["state"];
 
 const TICK_COLOR: Record<TickState, string | undefined> = {
   done: "var(--accent)",
   working: "color-mix(in oklab, var(--accent) 40%, transparent)",
+  failed: "var(--grade-f)",
   open: undefined,
 };
 
+const DEFAULT_PLACE = { city: "Bentonville", state: "AR", zip: "72712" };
+
 export default async function RecordsPage({ searchParams }: PageProps<"/records">) {
-  const user = await currentUser();
-  if (!user) redirect("/");
-
   const sp = await searchParams;
-  const orgs = await listOrgsForUser(user.id);
-  const org = await activeOrg(user.id);
 
-  // Every record the reader can reach, from every company they belong to. The
-  // list below shows the active company's; the map is what lets an assignment
-  // name its property instead of showing an id.
-  const perOrg = await Promise.all(orgs.map((o) => listRecordsForOrg(o.id)));
-  const visible = new Map<string, RecordRow>();
-  for (const rows of perOrg) for (const r of rows) visible.set(r.id, r);
+  const data = await kit.asMe(async (tx, me) => {
+    const { orgs: mine, org } = await orgContext(tx, me);
+    const rows = org ? await records.listRecordsForOrg(tx, org.id) : [];
+    const summaries = [];
+    for (const r of rows) summaries.push({ ...r, ticks: await records.stageStatuses(tx, r.property.id) });
 
-  const orgNames = new Map(orgs.map((o) => [o.id, o.name]));
-  const records = org ? (perOrg[orgs.findIndex((o) => o.id === org.id)] ?? []) : [];
+    // Direct assignments plus everything landed on a company the reader is in.
+    const assignments = (await records.listAssignmentsForIdentity(tx, me.identity.id, mine.map((o) => o.id))).sort((a, b) => {
+      if (a.status !== b.status) return a.status === "open" ? -1 : 1;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
 
-  const summaries = await Promise.all(
-    records.map(async (r) => {
-      const captures = await listCaptures(r.id);
-      const byStage = new Map(captures.map((c) => [c.stage, c.state]));
-      const ticks: TickState[] = STAGES.map((s) => {
-        const state = byStage.get(s.id);
-        if (state === "done") return "done";
-        if (state != null && IN_FLIGHT.has(state)) return "working";
-        return "open";
-      });
+    // Name each assignment's property where the reader may see it. Row-level
+    // security decides; anything it hides stays unnamed rather than guessed.
+    const visible = new Map<string, { record: BuildRecord; property: Property }>();
+    for (const r of rows) visible.set(r.record.id, { record: r.record, property: r.property });
+    for (const id of new Set(assignments.map((a) => a.recordId))) {
+      if (visible.has(id)) continue;
+      const record = await records.getRecord(tx, id);
+      const property = record ? await properties.getProperty(tx, record.propertyId) : null;
+      if (record && property) visible.set(id, { record, property });
+    }
 
-      let passed = 0;
-      let assessed = 0;
-      for (const c of captures) {
-        const q = c.quality;
-        if (!q?.checkpoints?.length) continue;
-        passed += q.checkpointsPassed ?? q.checkpoints.filter((p) => p.status === "pass").length;
-        assessed +=
-          q.checkpointsAssessed ??
-          q.checkpoints.filter((p) => p.status !== "not_assessable").length;
-      }
-
-      return {
-        record: r,
-        done: ticks.filter((t) => t === "done").length,
-        working: ticks.filter((t) => t === "working").length,
-        ticks,
-        passed,
-        assessed,
-      };
-    }),
-  );
-
-  const filmed = summaries.reduce((n, s) => n + s.done, 0);
-  const passed = summaries.reduce((n, s) => n + s.passed, 0);
-  const assessed = summaries.reduce((n, s) => n + s.assessed, 0);
-
-  // Direct assignments plus everything landed on a company the reader is in.
-  const direct = await listAssignmentsForUser(user.id);
-  const viaOrgs = (await Promise.all(orgs.map((o) => listAssignmentsForOrg(o.id)))).flat();
-  const byId = new Map<string, Assignment>();
-  for (const a of [...direct, ...viaOrgs]) byId.set(a.id, a);
-  const assignments = [...byId.values()].sort((a, b) => {
-    if (a.status !== b.status) return a.status === "open" ? -1 : 1;
-    return b.createdAt.localeCompare(a.createdAt);
+    const last = rows[0]?.property;
+    return {
+      me,
+      mine,
+      org,
+      summaries,
+      assignments,
+      visible,
+      place: last ? { city: last.city, state: last.state, zip: last.postalCode } : DEFAULT_PLACE,
+    };
   });
-  const openCount = assignments.filter((a) => a.status === "open").length;
 
-  // A task handed straight to this person can sit on a property their company
-  // does not hold — being assigned is itself the access, so the address is
-  // theirs to see. Anything still unresolved stays unnamed rather than guessed.
-  const unnamed = [...new Set(assignments.map((a) => a.recordId))].filter((id) => !visible.has(id));
-  for (const r of await Promise.all(unnamed.map((id) => getRecordById(id)))) {
-    if (r) visible.set(r.id, r);
-  }
+  const { me, mine, org, summaries, assignments, visible, place } = data;
+  const orgNames = new Map(mine.map((o) => [o.id, o.name]));
+  const filmed = summaries.reduce((n, s) => n + s.stats.stagesFilmed, 0);
+  const passed = summaries.reduce((n, s) => n + s.stats.pointsPassed, 0);
+  const assessed = summaries.reduce((n, s) => n + s.stats.pointsAssessed, 0);
+  const openCount = assignments.filter((a) => a.status === "open").length;
+  const claimed = Array.isArray(sp.claimed) ? sp.claimed[0] : sp.claimed;
 
   return (
     <>
@@ -124,17 +84,22 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
         eyebrow="Build records"
         title="On file"
         subtitle={org ? org.name : "No company yet"}
-        meta={`${records.length} home${records.length === 1 ? "" : "s"}`}
+        meta={`${summaries.length} home${summaries.length === 1 ? "" : "s"}`}
       />
 
       <main className="shell flex-1 space-y-6 py-5">
         <ErrorLine message={sp.error} />
+        {claimed != null && (
+          <p role="status" className="text-[0.8125rem] leading-relaxed" style={{ color: "var(--claude)" }}>
+            {claimed === "0" ? "That key had no unclaimed records." : `${claimed} record${claimed === "1" ? "" : "s"} moved to ${org?.name ?? "your company"}.`}
+          </p>
+        )}
 
-        {orgs.length > 1 && (
+        {mine.length > 1 && (
           <section>
             <h2 className="eyebrow">Filing as</h2>
             <ul className="mt-2 flex flex-wrap gap-2">
-              {orgs.map((o) => {
+              {mine.map((o) => {
                 const active = o.id === org?.id;
                 return (
                   <li key={o.id}>
@@ -160,12 +125,9 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
             <StatStrip
               className="border-t-0"
               items={[
-                { term: "Properties on file", value: String(records.length) },
+                { term: "Properties on file", value: String(summaries.length) },
                 { term: "Stages filmed", value: String(filmed) },
-                {
-                  term: "Points passed",
-                  value: assessed > 0 ? `${passed} / ${assessed}` : "—",
-                },
+                { term: "Points passed", value: assessed > 0 ? `${passed} / ${assessed}` : "—" },
                 { term: "Open assignments", value: String(openCount) },
               ]}
             />
@@ -184,13 +146,7 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
                 <label className="label block" htmlFor="company-name">
                   Company name
                 </label>
-                <input
-                  id="company-name"
-                  name="name"
-                  required
-                  placeholder="Reyes Framing"
-                  className="input mt-1.5"
-                />
+                <input id="company-name" name="name" required placeholder="Reyes Framing" className="input mt-1.5" />
               </div>
               <div>
                 <label className="label block" htmlFor="company-headline">
@@ -216,21 +172,15 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
             <p className="label mt-2.5">Nothing assigned to you</p>
           ) : (
             <ul className="mt-2.5 space-y-2">
-              {assignments.map((a) => {
-                const record = visible.get(a.recordId);
+              {assignments.map((a: Assignment) => {
+                const hit = visible.get(a.recordId);
                 const forWhom =
-                  a.assigneeUserId === user.id
-                    ? "You"
-                    : (orgNames.get(a.assigneeOrgId ?? "") ?? "Your company");
+                  a.assigneeIdentityId === me.identity.id ? "You" : (orgNames.get(a.assigneeOrgId ?? "") ?? "Your company");
                 return (
                   <li key={a.id} className="card px-4 py-3">
                     <div className="flex items-start gap-3">
-                      <p className="min-w-0 flex-1 text-[0.9375rem] font-medium leading-snug">
-                        {a.task}
-                      </p>
-                      <span
-                        className={`chip shrink-0 ${a.status === "open" ? "chip-accent" : ""}`}
-                      >
+                      <p className="min-w-0 flex-1 text-[0.9375rem] font-medium leading-snug">{a.task}</p>
+                      <span className={`chip shrink-0 ${a.status === "open" ? "chip-accent" : ""}`}>
                         {a.status === "open" ? "Open" : "Done"}
                       </span>
                     </div>
@@ -240,12 +190,12 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
                       {a.stage && <span className="chip">{stageDef(a.stage).short}</span>}
                     </div>
 
-                    {record ? (
+                    {hit ? (
                       <Link
-                        href={`/records/${record.slug}`}
+                        href={`/records/${hit.record.slug}`}
                         className="tnum mt-2 flex min-h-[2.25rem] items-center text-[0.75rem] uppercase tracking-[0.12em] text-[var(--accent)]"
                       >
-                        {record.address}
+                        {streetOf(hit.property)}
                       </Link>
                     ) : (
                       <p className="label mt-2">Property not on your file yet</p>
@@ -270,28 +220,19 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
             </div>
           ) : (
             <ul className="mt-2.5 space-y-3">
-              {summaries.map(({ record, done, working, ticks }) => (
+              {summaries.map(({ record, property, stats, ticks }) => (
                 <li key={record.id}>
                   <Link href={`/records/${record.slug}`} className="card block px-4 py-3.5">
                     <div className="flex items-start gap-3">
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[1rem] font-semibold leading-snug">
-                          {record.address}
-                        </span>
-                        <span className="tnum mt-1 block text-[0.625rem] uppercase tracking-[0.14em] text-[var(--ink-3)]">
-                          {String(done).padStart(2, "0")}/{STAGES.length} stages
-                          {working > 0 ? ` · ${working} building` : ""}
-                          {record.owner ? ` · ${record.owner}` : ""}
+                        <span className="block truncate text-[1rem] font-semibold leading-snug">{streetOf(property)}</span>
+                        <span className="tnum mt-1 block truncate text-[0.625rem] uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                          {String(stats.stagesFilmed).padStart(2, "0")}/{STAGES.length} stages
+                          {stats.stagesInFlight > 0 ? ` · ${stats.stagesInFlight} building` : ""}
+                          {record.ownerName ? ` · ${record.ownerName}` : ` · ${cityLineOf(property)}`}
                         </span>
                       </span>
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        aria-hidden
-                        className="mt-1 shrink-0"
-                      >
+                      <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden className="mt-1 shrink-0">
                         <path
                           d="m6 3.5 4.5 4.5L6 12.5"
                           stroke="var(--ink-3)"
@@ -303,11 +244,11 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
                     </div>
 
                     <span className="comb comb-11 mt-3" aria-hidden>
-                      {ticks.map((t, i) => (
+                      {ticks.map((t) => (
                         <span
-                          key={STAGES[i].id}
+                          key={t.stage}
                           className="tick"
-                          style={TICK_COLOR[t] ? { background: TICK_COLOR[t] } : undefined}
+                          style={TICK_COLOR[t.state] ? { background: TICK_COLOR[t.state] } : undefined}
                         />
                       ))}
                     </span>
@@ -326,26 +267,52 @@ export default async function RecordsPage({ searchParams }: PageProps<"/records"
             <form action={createRecordAction} className="space-y-4 px-4 py-4">
               <div>
                 <label className="label block" htmlFor="address">
-                  Property address
+                  Street address
                 </label>
-                <input
-                  id="address"
-                  name="address"
-                  required
-                  placeholder="1418 Ridgemont Dr"
-                  className="input mt-1.5"
-                />
+                <input id="address" name="address" required placeholder="1418 Ridgemont Dr" autoComplete="street-address" className="input mt-1.5" />
+                <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
+                  Or type the whole address on one line — &ldquo;1418 Ridgemont Dr, Bentonville, AR 72712&rdquo; — and the fields below are ignored.
+                </p>
+              </div>
+              <div>
+                <label className="label block" htmlFor="line2">
+                  Unit <span className="normal-case tracking-normal">(optional)</span>
+                </label>
+                <input id="line2" name="line2" placeholder="Unit 3" autoComplete="address-line2" className="input mt-1.5" />
+              </div>
+              <div className="grid grid-cols-[1fr_4.5rem_6rem] gap-2">
+                <div>
+                  <label className="label block" htmlFor="city">
+                    City
+                  </label>
+                  <input id="city" name="city" defaultValue={place.city} autoComplete="address-level2" className="input mt-1.5" />
+                </div>
+                <div>
+                  <label className="label block" htmlFor="state">
+                    State
+                  </label>
+                  <input
+                    id="state"
+                    name="state"
+                    defaultValue={place.state}
+                    maxLength={2}
+                    autoCapitalize="characters"
+                    autoComplete="address-level1"
+                    className="input tnum mt-1.5 uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="label block" htmlFor="zip">
+                    ZIP
+                  </label>
+                  <input id="zip" name="zip" defaultValue={place.zip} inputMode="numeric" autoComplete="postal-code" className="input tnum mt-1.5" />
+                </div>
               </div>
               <div>
                 <label className="label block" htmlFor="owner">
                   Homeowner <span className="normal-case tracking-normal">(optional)</span>
                 </label>
-                <input
-                  id="owner"
-                  name="owner"
-                  placeholder="Who inherits this record"
-                  className="input mt-1.5"
-                />
+                <input id="owner" name="owner" placeholder="Who inherits this record" className="input mt-1.5" />
               </div>
               <button type="submit" className="btn btn-primary w-full">
                 Create record

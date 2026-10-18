@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ErrorLine } from "@homefax/ui";
-import { LogoMark } from "@homefax/ui";
-import { Wordmark } from "@homefax/ui";
-import { signInAction, signUpAction } from "@/app/account/actions";
-import { currentUser } from "@/lib/accounts";
+import { PASSWORD_MIN } from "@homefax/auth";
 import { STAGES } from "@homefax/core";
+import { ErrorLine, LogoMark, Wordmark } from "@homefax/ui";
+import { signInAction, signUpAction } from "@/app/account/actions";
+import { currentUser } from "@/lib/session";
 
 /**
  * The front of the record. The boxed AR logo draws itself in once on the onyx
@@ -33,8 +32,8 @@ const WHERE_THE_WORK_HAPPENS = [
 ];
 
 export default async function Home({ searchParams }: PageProps<"/">) {
-  const user = await currentUser();
-  if (user) redirect("/records");
+  const me = await currentUser();
+  if (me) redirect("/records");
 
   const sp = await searchParams;
   const raw = Array.isArray(sp.mode) ? sp.mode[0] : sp.mode;
@@ -161,12 +160,12 @@ export default async function Home({ searchParams }: PageProps<"/">) {
                   name="password"
                   type="password"
                   required
-                  minLength={8}
+                  minLength={PASSWORD_MIN}
                   autoComplete="new-password"
                   className="input mt-1.5"
                 />
                 <p className="mt-1.5 text-[0.75rem] leading-relaxed text-[var(--ink-3)]">
-                  Eight characters or more.
+                  Ten characters or more.
                 </p>
               </div>
               <div>

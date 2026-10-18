@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ErrorLine } from "@homefax/ui";
-import { LogoMark } from "@homefax/ui";
-import { Wordmark } from "@homefax/ui";
+import { PASSWORD_MIN } from "@homefax/auth";
+import { auth, withService } from "@homefax/db";
+import { ErrorLine, LogoMark, Wordmark } from "@homefax/ui";
 import { resetPasswordAction } from "@/app/account/actions";
-import { currentUser, findPasswordReset } from "@/lib/accounts";
-import { PASSWORD_MIN } from "@/lib/auth";
+import { currentUser } from "@/lib/session";
 
 /**
  * The far end of a reset link. The token in the URL is checked before anything
@@ -15,17 +14,14 @@ import { PASSWORD_MIN } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function ResetPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const user = await currentUser();
-  if (user) redirect("/records");
+export default async function ResetPage({ searchParams }: PageProps<"/reset">) {
+  const me = await currentUser();
+  if (me) redirect("/records");
 
   const sp = await searchParams;
   const token = (Array.isArray(sp.token) ? sp.token[0] : sp.token) ?? "";
-  const found = token ? await findPasswordReset(token) : null;
+  // Resets are a service-level flow: there is no actor yet, and nobody but the platform may read the token table.
+  const found = token ? await withService((tx) => auth.findPasswordReset(tx, token)) : null;
 
   return (
     <main className="shell flex flex-1 flex-col py-8">
@@ -35,10 +31,7 @@ export default async function ResetPage({
           <h1 className="mt-1">
             <Wordmark size={25} tracking={0.34} accent="var(--claude)" />
           </h1>
-          <p
-            className="tnum mt-3.5 text-[0.625rem] font-medium uppercase"
-            style={{ letterSpacing: "0.22em", color: "var(--ink-3)" }}
-          >
+          <p className="tnum mt-3.5 text-[0.625rem] font-medium uppercase" style={{ letterSpacing: "0.22em", color: "var(--ink-3)" }}>
             {found ? "Set a new password" : "Reset link"}
           </p>
         </div>
@@ -48,37 +41,20 @@ export default async function ResetPage({
             <form action={resetPasswordAction} className="space-y-4">
               <input type="hidden" name="token" value={token} />
               <p className="text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
-                This link is for <span className="font-medium text-[var(--ink)]">{found.user.name}</span>{" "}
-                (@{found.user.handle}). Choose the new password below — it works once and signs you
-                in.
+                This link is for <span className="font-medium text-[var(--ink)]">{found.profile.name}</span> (@{found.profile.handle}). Choose the
+                new password below — ten characters or more. It works once and signs you in.
               </p>
               <div>
                 <label className="label block" htmlFor="reset-password">
                   New password
                 </label>
-                <input
-                  id="reset-password"
-                  name="password"
-                  type="password"
-                  required
-                  minLength={PASSWORD_MIN}
-                  autoComplete="new-password"
-                  className="input mt-1.5"
-                />
+                <input id="reset-password" name="password" type="password" required minLength={PASSWORD_MIN} autoComplete="new-password" className="input mt-1.5" />
               </div>
               <div>
                 <label className="label block" htmlFor="reset-confirm">
                   New password again
                 </label>
-                <input
-                  id="reset-confirm"
-                  name="confirm"
-                  type="password"
-                  required
-                  minLength={PASSWORD_MIN}
-                  autoComplete="new-password"
-                  className="input mt-1.5"
-                />
+                <input id="reset-confirm" name="confirm" type="password" required minLength={PASSWORD_MIN} autoComplete="new-password" className="input mt-1.5" />
               </div>
               <ErrorLine message={sp.error} />
               <button type="submit" className="btn btn-primary w-full">
@@ -89,8 +65,7 @@ export default async function ResetPage({
             <div className="space-y-4">
               <ErrorLine message={sp.error ?? "This reset link is not valid or has expired"} />
               <p className="text-[0.8125rem] leading-relaxed text-[var(--ink-2)]">
-                Reset links work once and expire after an hour. Ask your company&apos;s owner or
-                admin for a new one from their Team page.
+                Reset links work once and expire after an hour. Ask your company&apos;s owner or admin for a new one from their Team page.
               </p>
               <Link href="/?mode=signin" className="btn btn-secondary w-full">
                 Back to sign in

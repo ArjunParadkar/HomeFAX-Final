@@ -1,14 +1,14 @@
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
-import { currentUser } from "@/lib/accounts";
+import { kit } from "@/lib/kit";
 
 /**
  * Frames go from the phone straight to Blob storage; this route only hands out
  * a scoped, short-lived upload token. Nothing large passes through the function.
  */
 export async function POST(request: Request): Promise<NextResponse> {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const me = await kit.currentPrincipal();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await request.json()) as HandleUploadBody;
 
@@ -20,10 +20,10 @@ export async function POST(request: Request): Promise<NextResponse> {
         allowedContentTypes: ["image/jpeg", "image/png", "image/webp"],
         addRandomSuffix: true,
         maximumSizeInBytes: 12 * 1024 * 1024,
-        tokenPayload: JSON.stringify({ userId: user.id }),
+        tokenPayload: JSON.stringify({ identityId: me.identity.id }),
       }),
       onUploadCompleted: async () => {
-        // Frames are referenced by URL in the capture record; nothing to do here.
+        // Frames are referenced by URL in the capture row; nothing to do here.
       },
     });
     return NextResponse.json(result);

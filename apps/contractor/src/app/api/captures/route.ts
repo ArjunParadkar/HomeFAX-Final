@@ -1,13 +1,17 @@
-import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
-import { canAccessRecord, currentUser } from "@/lib/accounts";
-import { submitRecon } from "@homefax/core";
-import { isStageId } from "@homefax/core";
-import { getRecordBySlug, upsertCapture } from "@/lib/store";
+import { isStageId, submitRecon } from "@homefax/core";
+import { canBuild, records, withActor } from "@homefax/db";
+import { kit } from "@/lib/kit";
+import { orgContext } from "@/lib/session";
 
+/**
+ * The phone has selected and uploaded its frames; this opens the capture and
+ * hands the job to the reconstruction worker. Access is the project team's
+ * build right on the property, decided by row-level security's can_build.
+ */
 export async function POST(request: Request) {
-  const user = await currentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const me = await kit.currentPrincipal();
+  if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = (await request.json().catch(() => ({}))) as {
     recordId?: string;
@@ -16,49 +20,45 @@ export async function POST(request: Request) {
     imageUrls?: string[];
     videoUrl?: string;
   };
-
-  if (!body.stage || !isStageId(body.stage)) {
+  const stage = body.stage;
+  if (!stage || !isStageId(stage)) {
     return NextResponse.json({ error: "A valid stage is required." }, { status: 400 });
   }
 
-  // Support both recordId and legacy slug lookup
-  let record: Awaited<ReturnType<typeof getRecordBySlug>> = null;
-  if (body.recordId) {
-    const { getRecordById } = await import("@/lib/store");
-    record = await getRecordById(body.recordId);
-  } else if (body.slug) {
-    record = await getRecordBySlug(body.slug);
-  }
-
-  if (!record) {
-    return NextResponse.json({ error: "Record not found." }, { status: 404 });
-  }
-
-  const hasAccess = await canAccessRecord(user.id, record.id);
-  if (!hasAccess) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  const found = await withActor({ identityId: me.identity.id }, async (tx) => {
+    const record = body.recordId
+      ? await records.getRecord(tx, body.recordId)
+      : body.slug
+        ? (await records.getRecordBySlug(tx, body.slug))?.record ?? null
+        : null;
+    if (!record) return null;
+    const allowed = await canBuild(tx, record.propertyId);
+    const { org } = await orgContext(tx, me);
+    return { record, allowed, orgId: org?.id ?? null };
+  });
+  if (!found) return NextResponse.json({ error: "Record not found." }, { status: 404 });
+  if (!found.allowed) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
   let jobId: string;
   try {
-    jobId = await submitRecon({
-      stage: body.stage,
-      imageUrls: body.imageUrls,
-      videoUrl: body.videoUrl,
-    });
+    jobId = await submitRecon({ stage, imageUrls: body.imageUrls, videoUrl: body.videoUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  const id = nanoid(12);
-  await upsertCapture({
-    id,
-    recordId: record.id,
-    stage: body.stage,
-    jobId,
-    state: "queued",
-    sourceUrl: body.videoUrl ?? body.imageUrls?.[0] ?? null,
-    frames: body.imageUrls ?? [],
-  });
+  const capture = await withActor({ identityId: me.identity.id }, (tx) =>
+    records.upsertCapture(tx, {
+      record: found.record,
+      stage,
+      jobId,
+      state: "queued",
+      sourceUrl: body.videoUrl ?? body.imageUrls?.[0] ?? null,
+      frames: body.imageUrls ?? [],
+      filmedBy: me.identity.id,
+      filmedByOrgId: found.orgId,
+    }),
+  );
 
-  return NextResponse.json({ id, jobId });
+  return NextResponse.json({ id: capture.id, jobId });
 }

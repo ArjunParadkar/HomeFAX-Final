@@ -327,6 +327,22 @@ export async function finalizeCapture(
 export async function listStageGrades(tx: Tx, propertyId: string): Promise<StageGrade[]> {
   return tx.select().from(stageGrades).where(eq(stageGrades.propertyId, propertyId)).orderBy(stageGrades.filmedAt);
 }
+/** Stage grades for many properties at once — the board draws one comb per tile without a query per house. */
+export async function listStageGradesForProperties(tx: Tx, propertyIds: string[]): Promise<Map<string, StageGrade[]>> {
+  const out = new Map<string, StageGrade[]>();
+  if (!propertyIds.length) return out;
+  const rows = await tx
+    .select()
+    .from(stageGrades)
+    .where(inArray(stageGrades.propertyId, [...new Set(propertyIds)]))
+    .orderBy(stageGrades.filmedAt);
+  for (const r of rows) {
+    const list = out.get(r.propertyId);
+    if (list) list.push(r);
+    else out.set(r.propertyId, [r]);
+  }
+  return out;
+}
 export async function listCheckpointResults(tx: Tx, propertyId: string, filter?: { status?: CheckpointResultRow["status"][]; category?: CheckpointResultRow["category"][] }): Promise<CheckpointResultRow[]> {
   const conds = [eq(checkpointResults.propertyId, propertyId)];
   if (filter?.status?.length) conds.push(inArray(checkpointResults.status, filter.status));
@@ -418,6 +434,38 @@ export async function listHiresFromOrg(tx: Tx, orgId: string): Promise<Hire[]> {
 export async function listIncomingHires(tx: Tx, identityId: string, orgIds: string[]): Promise<Hire[]> {
   const cond = orgIds.length ? or(eq(hires.toIdentityId, identityId), inArray(hires.toOrgId, orgIds)) : eq(hires.toIdentityId, identityId);
   return tx.select().from(hires).where(cond).orderBy(desc(hires.createdAt));
+}
+
+/**
+ * Service: the addressee accepts an offer that names a property. Accepting is
+ * what puts them on the job, so at this moment they hold no build rights on the
+ * record and could not insert the assignment (or seat their company on the
+ * project team) as themselves. The app verifies the actor is the addressee —
+ * the person named, or an owner/admin of the company named — before calling;
+ * this re-checks it so the service transaction cannot be misused.
+ */
+export async function acceptHire(
+  tx: Tx,
+  input: { hireId: string; identityId: string; adminOrgIds: string[] },
+): Promise<Hire> {
+  const hire = await getHire(tx, input.hireId);
+  if (!hire) throw new Error("Offer not found");
+  if (hire.status !== "offered") throw new Error("This offer was already answered");
+  const addressee =
+    hire.toIdentityId === input.identityId || (hire.toOrgId != null && input.adminOrgIds.includes(hire.toOrgId));
+  if (!addressee) throw new Error("You are not the addressee of this offer");
+  await tx.update(hires).set({ status: "accepted" }).where(eq(hires.id, hire.id));
+  if (hire.recordId) {
+    await createAssignment(tx, {
+      recordId: hire.recordId,
+      assigneeIdentityId: hire.toIdentityId,
+      assigneeOrgId: hire.toOrgId,
+      task: hire.task,
+      assignedBy: input.identityId,
+    });
+    if (hire.toOrgId) await grantRecordAccess(tx, { recordId: hire.recordId, orgId: hire.toOrgId, role: "collaborator", addedBy: input.identityId });
+  }
+  return { ...hire, status: "accepted" };
 }
 
 /** Who a user is, for display: the names behind ids on a record page. */
