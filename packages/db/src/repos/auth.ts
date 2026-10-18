@@ -284,3 +284,14 @@ export async function eraseIdentity(tx: Tx, identityId: string): Promise<void> {
     .set({ email: `deleted+${identityId.toLowerCase()}@erased.homefax.invalid`, status: "deleted", deletedAt: new Date() })
     .where(eq(identities.id, identityId));
 }
+
+/**
+ * Service: does this password belong to this identity? Used to re-confirm the
+ * person before a destructive account action (erasing the account). Reads
+ * credentials, which no actor may see, so it has to run as the service. The
+ * caller must already have resolved the session and be acting for identityId.
+ */
+export async function checkPassword(tx: Tx, identityId: string, password: string): Promise<boolean> {
+  const cred = (await tx.select().from(credentials).where(eq(credentials.identityId, identityId)).limit(1))[0];
+  return Boolean(cred && verifyPassword(password, cred.passwordHash));
+}

@@ -206,6 +206,18 @@ test("institutions: holdings, draw recommendation, inspection review, audit trai
   assert.equal((await db.withActor({ identityId: w.stranger }, (tx) => db.audit.listAuditForProperty(tx, w.property.id))).length, 0);
 });
 
+test("an anonymous visitor with a share token reaches the house via the link", async () => {
+  const { db } = w;
+  const { hashToken } = await import("@homefax/auth");
+  const r = await db.withActor({ identityId: null, shareHash: hashToken(w.shareToken) }, (tx) => db.access.reach(tx, w.property.id, { identityId: null, shareHash: hashToken(w.shareToken) }));
+  assert.equal(r?.via, "share_link");
+  assert.equal(r?.scope, "summary");
+  assert.ok(r?.shareLinkId);
+  // Other links on the house stay invisible to the token holder.
+  const links = await db.withActor({ identityId: null, shareHash: hashToken(w.shareToken) }, (tx) => tx.select().from(db.schema.shareLinks));
+  assert.equal(links.length, 1);
+});
+
 test("access log records non-owner views and the owner can read it", async () => {
   const { db } = w;
   const r = await db.withActor({ identityId: w.banker }, (tx) => db.access.reach(tx, w.property.id, { identityId: w.banker }));
