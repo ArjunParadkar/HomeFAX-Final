@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, platform]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: homefax
+          POSTGRES_PASSWORD: homefax
+          POSTGRES_DB: homefax_platform
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U homefax" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://homefax:homefax@localhost:5432/homefax_platform
+      DATABASE_APP_URL: postgres://homefax_app:homefax_app_ci@localhost:5432/homefax_platform
+      PII_ENCRYPTION_KEY: KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Migrate and create the app role
+        run: |
+          npm run db:migrate
+          APP_ROLE_PASSWORD=homefax_app_ci npx tsx packages/db/scripts/create-app-role.ts
+      - name: Unit and database tests
+        run: |
+          npm test -w @homefax/core
+          npm test -w @homefax/auth
+          npm test -w @homefax/db
+      - name: Type-check packages
+        run: npm run typecheck --workspaces --if-present
+      - name: Build the apps
+        run: |
+          npm run build -w @homefax/contractor
+          npm run build -w @homefax/homeowner
+          npm run build -w @homefax/admin
+      - name: Lint the apps
+        run: npm run lint --workspaces --if-present
