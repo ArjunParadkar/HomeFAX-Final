@@ -295,3 +295,26 @@ export async function getProfilesByIds(tx: Tx, ids: string[]): Promise<Map<strin
   const rows = await tx.select().from(profiles).where(inArray(profiles.identityId, [...new Set(ids)]));
   return new Map(rows.map((r) => [r.identityId, r]));
 }
+
+/** Municipalities whose jurisdiction covers an address. Public read (jurisdictions are statutory, organisations of kind municipality are public). */
+export async function municipalitiesCovering(
+  tx: Tx,
+  property: { state: string; city: string; county: string | null; postalCode: string },
+): Promise<PublicOrg[]> {
+  const { sql: s } = await import("drizzle-orm");
+  const rows = await tx
+    .selectDistinct({ org: organizations })
+    .from(jurisdictions)
+    .innerJoin(organizations, and(eq(organizations.id, jurisdictions.orgId), eq(organizations.kind, "municipality")))
+    .where(
+      and(
+        eq(jurisdictions.state, property.state),
+        s`(
+          (${jurisdictions.city} IS NOT NULL AND upper(${jurisdictions.city}) = upper(${property.city}))
+          OR (${jurisdictions.county} IS NOT NULL AND ${property.county ?? null}::text IS NOT NULL AND upper(${jurisdictions.county}) = upper(${property.county ?? null}::text))
+          OR (${jurisdictions.postalCode} IS NOT NULL AND ${jurisdictions.postalCode} = ${property.postalCode})
+        )`,
+      ),
+    );
+  return rows.map((r) => toPublicOrg(r.org));
+}

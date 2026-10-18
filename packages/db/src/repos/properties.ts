@@ -148,7 +148,7 @@ export const OWNER_INVITE_DAYS = 30;
 /** A contractor (or current owner) issues a claim code for the homeowner. */
 export async function createOwnerInvite(
   tx: Tx,
-  input: { propertyId: string; invitedBy: string; email?: string | null },
+  input: { propertyId: string; invitedBy: string | null; email?: string | null },
 ): Promise<{ invite: OwnerInvite; code: string }> {
   const code = mintClaimCode();
   const [invite] = await tx
@@ -158,7 +158,7 @@ export async function createOwnerInvite(
       propertyId: input.propertyId,
       codeHash: hashToken(code),
       email: input.email?.trim().toLowerCase() || null,
-      invitedBy: input.invitedBy,
+      invitedBy: input.invitedBy || null,
       expiresAt: new Date(Date.now() + OWNER_INVITE_DAYS * 86400_000),
     })
     .returning();
@@ -270,4 +270,21 @@ export async function addDocument(
 
 export async function removeDocument(tx: Tx, id: string): Promise<void> {
   await tx.delete(propertyDocuments).where(eq(propertyDocuments.id, id));
+}
+
+/**
+ * Service: look a house up by address without creating it — for an institution
+ * that wants to request access to a house it cannot yet see. Returns only what
+ * the request form needs; the caller must not leak stats from this.
+ */
+export async function findByAddress(tx: Tx, input: AddressParts): Promise<Pick<Property, "id" | "slug" | "line1" | "line2" | "city" | "state" | "postalCode"> | null> {
+  const parts = normalizeAddress(input);
+  const row = (
+    await tx
+      .select({ id: properties.id, slug: properties.slug, line1: properties.line1, line2: properties.line2, city: properties.city, state: properties.state, postalCode: properties.postalCode })
+      .from(properties)
+      .where(eq(properties.addressKey, addressKey(parts)))
+      .limit(1)
+  )[0];
+  return row ?? null;
 }
