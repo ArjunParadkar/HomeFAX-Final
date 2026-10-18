@@ -446,11 +446,24 @@ export async function recordInspectionReview(
   tx: Tx,
   input: { captureId: string; propertyId: string; municipalityOrgId: string; permitId?: string | null; reviewerId: string; verdict: InspectionReview["verdict"]; notes?: string | null; orgName?: string; stage?: StageId },
 ): Promise<InspectionReview> {
-  await tx.delete(inspectionReviews).where(and(eq(inspectionReviews.captureId, input.captureId), eq(inspectionReviews.municipalityOrgId, input.municipalityOrgId)));
-  const [row] = await tx
-    .insert(inspectionReviews)
-    .values({ id: newId(), captureId: input.captureId, propertyId: input.propertyId, municipalityOrgId: input.municipalityOrgId, permitId: input.permitId ?? null, reviewerId: input.reviewerId, verdict: input.verdict, notes: input.notes?.trim() || null })
-    .returning();
+  // One verdict per municipality per capture. A re-review updates in place:
+  // the policies let a member UPDATE their municipality's row but not DELETE
+  // it, so delete-then-insert would trip the unique index for an actor.
+  const existing = (
+    await tx
+      .select({ id: inspectionReviews.id })
+      .from(inspectionReviews)
+      .where(and(eq(inspectionReviews.captureId, input.captureId), eq(inspectionReviews.municipalityOrgId, input.municipalityOrgId)))
+      .limit(1)
+  )[0];
+  const values = { permitId: input.permitId ?? null, reviewerId: input.reviewerId, verdict: input.verdict, notes: input.notes?.trim() || null, at: new Date() };
+  const [row] = existing
+    ? await tx.update(inspectionReviews).set(values).where(eq(inspectionReviews.id, existing.id)).returning()
+    : await tx
+        .insert(inspectionReviews)
+        .values({ id: newId(), captureId: input.captureId, propertyId: input.propertyId, municipalityOrgId: input.municipalityOrgId, ...values })
+        .returning();
+  if (!row) throw new Error("The review could not be recorded");
   const word = input.verdict === "verified" ? "verified" : input.verdict === "flagged" ? "flagged" : "scheduled for a site visit";
   await addEvent(tx, {
     propertyId: input.propertyId,

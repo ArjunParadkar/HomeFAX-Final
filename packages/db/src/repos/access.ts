@@ -240,6 +240,27 @@ export async function listRequestsForOrg(tx: Tx, orgId: string): Promise<Request
     .orderBy(desc(accessRequests.createdAt));
 }
 
+export type RequestWithAddress = { request: AccessRequest; address: Pick<Property, "id" | "slug" | "line1" | "line2" | "city" | "state" | "postalCode"> };
+/**
+ * Service: every request an institution has filed, with only the address of
+ * each house. A pending request is, by definition, on a house the requester
+ * cannot see yet, so the actor-level join in listRequestsForOrg hides exactly
+ * the rows a "your requests" page is for. The address is what the requester
+ * typed; nothing else about the house comes back. The app must verify the
+ * actor is a member of requesterOrgId before calling.
+ */
+export async function listRequestsForOrgAsService(tx: Tx, orgId: string): Promise<RequestWithAddress[]> {
+  return tx
+    .select({
+      request: accessRequests,
+      address: { id: properties.id, slug: properties.slug, line1: properties.line1, line2: properties.line2, city: properties.city, state: properties.state, postalCode: properties.postalCode },
+    })
+    .from(accessRequests)
+    .innerJoin(properties, eq(properties.id, accessRequests.propertyId))
+    .where(eq(accessRequests.requesterOrgId, orgId))
+    .orderBy(desc(accessRequests.createdAt));
+}
+
 /** Pending requests across every property the actor owns. */
 export async function listPendingRequestsForOwner(tx: Tx, identityId: string): Promise<RequestWithProperty[]> {
   return tx
