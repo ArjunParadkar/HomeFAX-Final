@@ -1,0 +1,27 @@
+{
+  "name": "@homefax/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HomeFAX design system: the permit-card / grade-stamp components and the brand marks.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./model-viewer": "./src/ModelViewer.tsx",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": { "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": {
+    "@homefax/core": "*",
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
+    "three": "^0.185.1",
+    "three-stdlib": "^2.36.0"
+  },
+  "peerDependencies": { "next": "*", "react": "*", "react-dom": "*" },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/three": "^0.185.4",
+    "typescript": "^5"
+  }
+}

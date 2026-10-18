@@ -1,39 +1,20 @@
 {
-  "name": "homefax-final",
-  "version": "0.1.0",
+  "name": "homefax",
   "private": true,
+  "version": "1.0.0",
+  "description": "HomeFAX — the permanent record of how a home was built. Contractor, homeowner, and institution apps over one secured database.",
+  "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "test": "tsx --test tests/*.test.ts"
+    "dev:contractor": "npm run dev -w @homefax/contractor",
+    "dev:homeowner": "npm run dev -w @homefax/homeowner",
+    "dev:admin": "npm run dev -w @homefax/admin",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate": "npm run migrate -w @homefax/db",
+    "db:seed": "npm run seed -w @homefax/db",
+    "db:import-legacy": "npm run import-legacy -w @homefax/db"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0",
-    "@react-three/drei": "^10.7.8",
-    "@react-three/fiber": "^9.7.0",
-    "@vercel/blob": "^2.8.0",
-    "drizzle-orm": "^0.45.2",
-    "nanoid": "^5.1.16",
-    "next": "16.3.1",
-    "postgres": "^3.4.9",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "three": "^0.185.1",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@types/three": "^0.185.4",
-    "drizzle-kit": "^0.31.10",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.1",
-    "tailwindcss": "^4",
-    "tsx": "^4.23.12",
-    "typescript": "^5"
-  }
+  "engines": { "node": ">=22" }
 }
