@@ -45,3 +45,11 @@ project membership, an explicit grant, municipal jurisdiction or a share link,
 and every non-owner look is logged where the owner can read it. Sensitive
 references are encrypted at rest; the audit log is append-only and redacts
 secrets by trigger; the runtime role cannot alter the schema.
+
+## Demo
+
+- Live contractor app (the `main` branch): https://homefax-final.vercel.app
+- Product walkthrough: [`demo/homefax_demo.mp4`](demo/homefax_demo.mp4)
+- One-minute pitch: [`demo/homefax_yc_pitch.mp4`](demo/homefax_yc_pitch.mp4)
+
+This `platform` branch is the monorepo (contractor + homeowner + admin apps over `@homefax/db` with row-level security); `docs/DEPLOY.md` is the runbook and `docs/ARCHITECTURE.md` the map. Local run: `docker compose up -d db && npm install && npm run db:migrate && npm run dev`.
