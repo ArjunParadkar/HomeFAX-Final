@@ -93,3 +93,7 @@ src/lib/recon.ts     RunPod client, plus the simulation fallback
 src/lib/vision.ts    the vision review
 services/recon/      the GPU worker
 ```
+
+## Platform branch
+
+The multi-app platform (contractor + homeowner + admin over a shared RLS database) lives on the [`platform`](https://github.com/ArjunParadkar/HomeFAX-Final/tree/platform) branch, with demo videos under `demo/`. This `main` branch is the contractor app that is live at https://homefax-final.vercel.app.
