@@ -24,15 +24,21 @@ in `docs/DATABASE.md` and `docs/DEPLOY.md`. Each app has its own README.
 
 ## Run it
 
+Needs Node ≥ 22 and a Postgres 16 on `localhost:5432` (`DATABASE_URL` in `.env`, see `docs/DEPLOY.md`).
+
 ```bash
 npm install
 npm run db:migrate && APP_ROLE_PASSWORD=homefax_app_dev npx tsx packages/db/scripts/create-app-role.ts
-npm run db:seed                    # demo world; prints the accounts
-npm run dev:contractor             # http://localhost:3000
-npm run dev:homeowner              # http://localhost:3001
-npm run dev:admin                  # http://localhost:3002
+npm run db:seed                    # demo world; prints the accounts (password homefax-demo-2026)
+npm run dev:contractor             # http://localhost:3000  film · grade · take off
+npm run dev:homeowner              # http://localhost:3001  the house's record
+npm run dev:admin                  # http://localhost:3002  municipality / lender / insurer workspaces
 npm test                           # core · auth · db (needs the local Postgres) · app smoke tests (need dev servers)
 ```
+
+Sign in with a seeded account and you should see the demo house's 11 graded stages, its parts take-off and the
+access ladder. No time to run it? Watch [`demo/homefax_demo.mp4`](demo/homefax_demo.mp4) or use the live
+contractor app at https://homefax-final.vercel.app (see [Demo](#demo)).
 
 ## Security posture, in one paragraph
 
@@ -52,4 +58,4 @@ secrets by trigger; the runtime role cannot alter the schema.
 - Product walkthrough: [`demo/homefax_demo.mp4`](demo/homefax_demo.mp4)
 - One-minute pitch: [`demo/homefax_yc_pitch.mp4`](demo/homefax_yc_pitch.mp4)
 
-This `platform` branch is the monorepo (contractor + homeowner + admin apps over `@homefax/db` with row-level security); `docs/DEPLOY.md` is the runbook and `docs/ARCHITECTURE.md` the map. Local run: `docker compose up -d db && npm install && npm run db:migrate && npm run dev`.
+This `platform` branch is the monorepo (contractor + homeowner + admin apps over `@homefax/db` with row-level security); `docs/DEPLOY.md` is the runbook and `docs/ARCHITECTURE.md` the map. Local run: the [Run it](#run-it) block above (`docs/DEPLOY.md` § Local).
