@@ -4,6 +4,18 @@ A permanent record of how a house was actually built. The contractor films each
 stage on a phone; the app returns a measured 3D model, a graded inspection, and
 a parts list that shows its work.
 
+## Run it
+
+```bash
+npm install
+npm run dev            # http://localhost:3000
+```
+
+With nothing configured the app runs end to end against a local JSON store and a simulated
+reconstruction (labelled as simulated wherever it shows): film or upload a stage, get the graded
+inspection and the parts take-off. Live: https://homefax-final.vercel.app · product walkthrough video:
+[`demo/homefax_demo.mp4` on the `platform` branch](https://github.com/ArjunParadkar/HomeFAX-Final/blob/platform/demo/homefax_demo.mp4).
+
 ## The pipeline
 
 ```
